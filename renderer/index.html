@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Stock Management</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <nav id="sidebar">
+      <h2>Stock Manager</h2>
+      <ul>
+        <li><a href="#" data-view="dashboard" class="active">Dashboard</a></li>
+        <li><a href="#" data-view="products">Products</a></li>
+        <li><a href="#" data-view="categories">Categories</a></li>
+        <li><a href="#" data-view="suppliers">Suppliers</a></li>
+        <li><a href="#" data-view="movements">Stock Movements</a></li>
+      </ul>
+    </nav>
+    <main id="content">
+      <h1>Dashboard</h1>
+      <p>Welcome to the Stock Management System.</p>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
