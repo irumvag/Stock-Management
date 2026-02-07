@@ -3,6 +3,7 @@ const path = require('path');
 const database = require('./database');
 
 let mainWindow;
+let receiptWindow = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -57,4 +58,26 @@ function registerIpcHandlers() {
   ipcMain.handle('sales:create', (_e, sale) => database.createSale(sale));
   ipcMain.handle('sales:getAll', () => database.getAllSales());
   ipcMain.handle('sales:getById', (_e, id) => database.getSaleById(id));
+
+  // Printing
+  ipcMain.handle('print:receipt', async (_e, receiptHtml) => {
+    return new Promise((resolve) => {
+      receiptWindow = new BrowserWindow({
+        show: false,
+        width: 300,
+        height: 600,
+        webPreferences: { contextIsolation: true, nodeIntegration: false },
+      });
+
+      receiptWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(receiptHtml)}`);
+
+      receiptWindow.webContents.on('did-finish-load', () => {
+        receiptWindow.webContents.print({ silent: false, printBackground: true }, (success) => {
+          receiptWindow.close();
+          receiptWindow = null;
+          resolve({ success });
+        });
+      });
+    });
+  });
 }

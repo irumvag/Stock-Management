@@ -22,4 +22,7 @@ contextBridge.exposeInMainWorld('api', {
   createSale: (sale) => ipcRenderer.invoke('sales:create', sale),
   getSales: () => ipcRenderer.invoke('sales:getAll'),
   getSale: (id) => ipcRenderer.invoke('sales:getById', id),
+
+  // Printing
+  printReceipt: (html) => ipcRenderer.invoke('print:receipt', html),
 });

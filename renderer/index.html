@@ -36,8 +36,9 @@
       <div id="user-info"></div>
       <ul id="nav-links">
         <li><a href="#" data-view="dashboard" class="active">Dashboard</a></li>
+        <li><a href="#" data-view="pos">Point of Sale</a></li>
         <li><a href="#" data-view="products">Inventory</a></li>
-        <li><a href="#" data-view="sales">Sales</a></li>
+        <li><a href="#" data-view="sales">Sales History</a></li>
       </ul>
       <div id="sidebar-footer">
         <a href="#" id="logout-btn">Sign Out</a>
@@ -115,6 +116,21 @@
       <div class="form-actions" style="padding: 0 20px 20px;">
         <button class="btn-secondary" id="delete-cancel-btn">Cancel</button>
         <button class="btn-danger" id="delete-confirm-btn">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Receipt Preview Modal -->
+  <div id="receipt-modal" class="modal-overlay" hidden>
+    <div class="modal modal-receipt">
+      <div class="modal-header">
+        <h2>Receipt</h2>
+        <button class="modal-close" id="receipt-close-btn">&times;</button>
+      </div>
+      <div id="receipt-content" style="padding: 20px;"></div>
+      <div class="form-actions" style="padding: 0 20px 20px;">
+        <button class="btn-secondary" id="receipt-done-btn">Close</button>
+        <button class="btn-primary" id="receipt-print-btn">Print Receipt</button>
       </div>
     </div>
   </div>
