@@ -23,6 +23,11 @@ contextBridge.exposeInMainWorld('api', {
   getSales: () => ipcRenderer.invoke('sales:getAll'),
   getSale: (id) => ipcRenderer.invoke('sales:getById', id),
 
+  // Reports
+  getSalesReport: (start, end) => ipcRenderer.invoke('reports:salesReport', start, end),
+  getMonthlySummary: () => ipcRenderer.invoke('reports:monthlySummary'),
+  getInventoryValueReport: () => ipcRenderer.invoke('reports:inventoryValue'),
+
   // Printing
   printReceipt: (html) => ipcRenderer.invoke('print:receipt', html),
   saveReceiptPdf: (html, defaultName) => ipcRenderer.invoke('print:savePdf', html, defaultName),

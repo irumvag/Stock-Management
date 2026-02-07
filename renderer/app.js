@@ -111,6 +111,9 @@ async function loadView(view) {
     case 'sales':
       await loadSalesHistory(content);
       break;
+    case 'reports':
+      await loadReports(content);
+      break;
   }
 }
 
@@ -600,6 +603,396 @@ async function loadSalesHistory(container) {
             </tr>`).join('')}
         </tbody>
       </table>`}`;
+}
+
+// =====================================================
+// REPORTS & ANALYTICS
+// =====================================================
+
+let currentReportTab = 'daily';
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function loadReports(container) {
+  container.innerHTML = `
+    <div class="view-header">
+      <h1>Reports & Analytics</h1>
+      <div>
+        <button class="btn-secondary btn-sm" id="report-print-btn">Print Report</button>
+        <button class="btn-secondary btn-sm" id="report-pdf-btn">Save as PDF</button>
+      </div>
+    </div>
+    <div class="report-tabs">
+      <button class="report-tab active" data-tab="daily">Daily Sales</button>
+      <button class="report-tab" data-tab="daterange">Date Range</button>
+      <button class="report-tab" data-tab="monthly">Monthly Summary</button>
+      <button class="report-tab" data-tab="bestsellers">Best Sellers</button>
+      <button class="report-tab" data-tab="inventory">Inventory Value</button>
+    </div>
+    <div id="report-content"></div>`;
+
+  // Tab switching
+  container.querySelectorAll('.report-tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      container.querySelector('.report-tab.active').classList.remove('active');
+      tab.classList.add('active');
+      currentReportTab = tab.dataset.tab;
+      loadReportTab(tab.dataset.tab);
+    });
+  });
+
+  document.getElementById('report-print-btn').addEventListener('click', printCurrentReport);
+  document.getElementById('report-pdf-btn').addEventListener('click', saveCurrentReportPdf);
+
+  loadReportTab(currentReportTab);
+}
+
+async function loadReportTab(tab) {
+  const rc = document.getElementById('report-content');
+  switch (tab) {
+    case 'daily': await loadDailyReport(rc); break;
+    case 'daterange': await loadDateRangeReport(rc); break;
+    case 'monthly': await loadMonthlyReport(rc); break;
+    case 'bestsellers': await loadBestSellersReport(rc); break;
+    case 'inventory': await loadInventoryValueReport(rc); break;
+  }
+}
+
+// --- Daily Sales Report ---
+
+async function loadDailyReport(container) {
+  const today = todayStr();
+  const report = await window.api.getSalesReport(today, today);
+  container.innerHTML = `
+    <div class="report-section">
+      <h2>Daily Sales Report - ${formatDateLabel(today)}</h2>
+      ${renderSalesReportCards(report)}
+      ${renderPaymentBreakdown(report.paymentBreakdown)}
+      ${renderBestSellersTable(report.bestSellers, 'Today\'s Items Sold')}
+    </div>`;
+}
+
+// --- Date Range Report ---
+
+async function loadDateRangeReport(container) {
+  const today = todayStr();
+  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+
+  container.innerHTML = `
+    <div class="report-section">
+      <div class="report-date-picker">
+        <div class="form-group">
+          <label for="report-start">Start Date</label>
+          <input type="date" id="report-start" value="${weekAgo}">
+        </div>
+        <div class="form-group">
+          <label for="report-end">End Date</label>
+          <input type="date" id="report-end" value="${today}">
+        </div>
+        <button class="btn-primary btn-sm" id="report-range-btn">Generate</button>
+      </div>
+      <div id="report-range-result"></div>
+    </div>`;
+
+  document.getElementById('report-range-btn').addEventListener('click', generateDateRangeReport);
+  generateDateRangeReport();
+}
+
+async function generateDateRangeReport() {
+  const start = document.getElementById('report-start').value;
+  const end = document.getElementById('report-end').value;
+  if (!start || !end) return;
+
+  const report = await window.api.getSalesReport(start, end);
+  const result = document.getElementById('report-range-result');
+  result.innerHTML = `
+    <h2>Sales Report: ${formatDateLabel(start)} to ${formatDateLabel(end)}</h2>
+    ${renderSalesReportCards(report)}
+    ${renderPaymentBreakdown(report.paymentBreakdown)}
+    ${renderBestSellersTable(report.bestSellers, 'Products Sold')}`;
+}
+
+// --- Monthly Summary ---
+
+async function loadMonthlyReport(container) {
+  const months = await window.api.getMonthlySummary();
+  const totalRev = months.reduce((s, m) => s + m.totalRevenue, 0);
+  const totalProf = months.reduce((s, m) => s + m.totalProfit, 0);
+
+  container.innerHTML = `
+    <div class="report-section">
+      <h2>Monthly Summary</h2>
+      <div class="stats-grid" style="margin-bottom:20px;">
+        <div class="stat-card"><div class="stat-value">${months.length}</div><div class="stat-label">Months with Sales</div></div>
+        <div class="stat-card"><div class="stat-value">${fmtNum(totalRev)}</div><div class="stat-label">All-Time Revenue</div></div>
+        <div class="stat-card"><div class="stat-value profit-positive">${fmtNum(totalProf)}</div><div class="stat-label">All-Time Profit</div></div>
+      </div>
+      ${months.length === 0 ? '<div class="empty-state">No sales data yet.</div>' : `
+      <!-- Bar chart -->
+      <div class="report-chart">
+        ${renderMonthlyChart(months)}
+      </div>
+      <table>
+        <thead><tr><th>Month</th><th>Sales</th><th>Items</th><th>Revenue</th><th>Cost</th><th>Profit</th><th>Margin</th></tr></thead>
+        <tbody>
+          ${months.map((m) => {
+            const margin = m.totalRevenue > 0 ? ((m.totalProfit / m.totalRevenue) * 100).toFixed(1) : '0.0';
+            return `<tr>
+              <td>${formatMonthLabel(m.month)}</td>
+              <td>${m.totalSales}</td>
+              <td>${m.totalItems}</td>
+              <td>${fmtNum(m.totalRevenue)}</td>
+              <td>${fmtNum(m.totalCost)}</td>
+              <td class="${m.totalProfit >= 0 ? 'profit-positive' : 'profit-negative'}">${fmtNum(m.totalProfit)}</td>
+              <td>${margin}%</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`}
+    </div>`;
+}
+
+function renderMonthlyChart(months) {
+  const display = months.slice().reverse().slice(-12);
+  const maxRev = Math.max(...display.map((m) => m.totalRevenue), 1);
+
+  return `<div class="chart-bars">
+    ${display.map((m) => {
+      const revH = Math.round((m.totalRevenue / maxRev) * 140);
+      const profH = Math.round((Math.max(m.totalProfit, 0) / maxRev) * 140);
+      return `<div class="chart-bar-group">
+        <div class="chart-bar-stack">
+          <div class="chart-bar bar-revenue" style="height:${revH}px" title="Revenue: ${fmtNum(m.totalRevenue)}"></div>
+          <div class="chart-bar bar-profit" style="height:${profH}px" title="Profit: ${fmtNum(m.totalProfit)}"></div>
+        </div>
+        <div class="chart-label">${m.month.slice(5)}</div>
+      </div>`;
+    }).join('')}
+  </div>
+  <div class="chart-legend">
+    <span class="legend-item"><span class="legend-color bar-revenue"></span> Revenue</span>
+    <span class="legend-item"><span class="legend-color bar-profit"></span> Profit</span>
+  </div>`;
+}
+
+// --- Best Sellers ---
+
+async function loadBestSellersReport(container) {
+  const today = todayStr();
+  const monthStart = today.slice(0, 8) + '01';
+
+  container.innerHTML = `
+    <div class="report-section">
+      <div class="report-date-picker">
+        <div class="form-group">
+          <label for="bs-start">Start Date</label>
+          <input type="date" id="bs-start" value="${monthStart}">
+        </div>
+        <div class="form-group">
+          <label for="bs-end">End Date</label>
+          <input type="date" id="bs-end" value="${today}">
+        </div>
+        <button class="btn-primary btn-sm" id="bs-generate-btn">Generate</button>
+      </div>
+      <div id="bs-result"></div>
+    </div>`;
+
+  document.getElementById('bs-generate-btn').addEventListener('click', generateBestSellers);
+  generateBestSellers();
+}
+
+async function generateBestSellers() {
+  const start = document.getElementById('bs-start').value;
+  const end = document.getElementById('bs-end').value;
+  if (!start || !end) return;
+
+  const report = await window.api.getSalesReport(start, end);
+  const rc = document.getElementById('bs-result');
+
+  rc.innerHTML = `
+    <h2>Best Selling Products: ${formatDateLabel(start)} to ${formatDateLabel(end)}</h2>
+    ${report.bestSellers.length === 0 ? '<div class="empty-state">No sales in this period.</div>' : `
+    <table>
+      <thead><tr><th>#</th><th>Product</th><th>Size</th><th>Qty Sold</th><th>Revenue</th><th>Cost</th><th>Profit</th></tr></thead>
+      <tbody>
+        ${report.bestSellers.map((p, i) => `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${escapeHtml(p.product_name)}</td>
+            <td>${escapeHtml(p.size_unit)}</td>
+            <td><strong>${p.total_qty}</strong></td>
+            <td>${fmtNum(p.total_revenue)}</td>
+            <td>${fmtNum(p.total_cost)}</td>
+            <td class="${(p.total_revenue - p.total_cost) >= 0 ? 'profit-positive' : 'profit-negative'}">${fmtNum(p.total_revenue - p.total_cost)}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`}`;
+}
+
+// --- Inventory Value ---
+
+async function loadInventoryValueReport(container) {
+  const report = await window.api.getInventoryValueReport();
+
+  container.innerHTML = `
+    <div class="report-section">
+      <h2>Inventory Value Report</h2>
+      <div class="stats-grid" style="margin-bottom:20px;">
+        <div class="stat-card"><div class="stat-value">${report.totalProducts}</div><div class="stat-label">Products</div></div>
+        <div class="stat-card"><div class="stat-value">${report.totalStock}</div><div class="stat-label">Total Units in Stock</div></div>
+        <div class="stat-card"><div class="stat-value">${fmtNum(report.totalBuyingValue)}</div><div class="stat-label">Total Cost Value</div></div>
+        <div class="stat-card"><div class="stat-value">${fmtNum(report.totalSellingValue)}</div><div class="stat-label">Total Selling Value</div></div>
+        <div class="stat-card"><div class="stat-value profit-positive">${fmtNum(report.potentialProfit)}</div><div class="stat-label">Potential Profit</div></div>
+      </div>
+
+      <h3 style="margin-bottom:10px;">By Category</h3>
+      <table style="margin-bottom:24px;">
+        <thead><tr><th>Category</th><th>Products</th><th>Stock Units</th><th>Cost Value</th><th>Selling Value</th><th>Potential Profit</th></tr></thead>
+        <tbody>
+          ${report.categories.map((c) => `
+            <tr>
+              <td>${escapeHtml(c.category)}</td>
+              <td>${c.itemCount}</td>
+              <td>${c.stockCount}</td>
+              <td>${fmtNum(c.buyingValue)}</td>
+              <td>${fmtNum(c.sellingValue)}</td>
+              <td class="profit-positive">${fmtNum(c.sellingValue - c.buyingValue)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+
+      <h3 style="margin-bottom:10px;">All Products</h3>
+      <table>
+        <thead><tr><th>Product</th><th>Category</th><th>Size</th><th>Stock</th><th>Buy Price</th><th>Sell Price</th><th>Stock Value</th><th>Potential Profit</th></tr></thead>
+        <tbody>
+          ${report.items.map((p) => `
+            <tr class="${p.current_stock <= p.min_stock_alert ? 'row-low-stock' : ''}">
+              <td>${escapeHtml(p.name)}</td>
+              <td>${escapeHtml(p.category)}</td>
+              <td>${escapeHtml(p.size_unit)}</td>
+              <td>${p.current_stock}</td>
+              <td>${p.buying_price.toFixed(2)}</td>
+              <td>${p.selling_price.toFixed(2)}</td>
+              <td>${fmtNum(p.stock_selling_value)}</td>
+              <td class="profit-positive">${fmtNum(p.potential_profit)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+// --- Report Rendering Helpers ---
+
+function renderSalesReportCards(report) {
+  return `
+    <div class="stats-grid" style="margin-bottom:20px;">
+      <div class="stat-card"><div class="stat-value">${report.totalSales}</div><div class="stat-label">Total Sales</div></div>
+      <div class="stat-card"><div class="stat-value">${report.totalItems}</div><div class="stat-label">Items Sold</div></div>
+      <div class="stat-card"><div class="stat-value">${fmtNum(report.totalRevenue)}</div><div class="stat-label">Revenue</div></div>
+      <div class="stat-card"><div class="stat-value">${fmtNum(report.totalCost)}</div><div class="stat-label">Cost</div></div>
+      <div class="stat-card"><div class="stat-value profit-positive">${fmtNum(report.totalProfit)}</div><div class="stat-label">Profit</div></div>
+      <div class="stat-card"><div class="stat-value">${report.profitMargin.toFixed(1)}%</div><div class="stat-label">Profit Margin</div></div>
+    </div>`;
+}
+
+function renderPaymentBreakdown(breakdown) {
+  const entries = Object.entries(breakdown);
+  if (entries.length === 0) return '';
+  return `
+    <h3 style="margin-bottom:10px;">Payment Methods</h3>
+    <div class="payment-breakdown">
+      ${entries.map(([method, amount]) =>
+        `<div class="payment-card"><div class="payment-method">${escapeHtml(method)}</div><div class="payment-amount">${fmtNum(amount)}</div></div>`
+      ).join('')}
+    </div>`;
+}
+
+function renderBestSellersTable(bestSellers, title) {
+  if (bestSellers.length === 0) return '';
+  return `
+    <h3 style="margin:20px 0 10px;">${escapeHtml(title)}</h3>
+    <table>
+      <thead><tr><th>#</th><th>Product</th><th>Size</th><th>Qty Sold</th><th>Revenue</th><th>Profit</th></tr></thead>
+      <tbody>
+        ${bestSellers.slice(0, 10).map((p, i) => `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${escapeHtml(p.product_name)}</td>
+            <td>${escapeHtml(p.size_unit)}</td>
+            <td><strong>${p.total_qty}</strong></td>
+            <td>${fmtNum(p.total_revenue)}</td>
+            <td class="profit-positive">${fmtNum(p.total_revenue - p.total_cost)}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function formatDateLabel(dateStr) {
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatMonthLabel(monthStr) {
+  const [y, m] = monthStr.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[parseInt(m, 10) - 1]} ${y}`;
+}
+
+function fmtNum(n) {
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// --- Report Print / PDF ---
+
+function buildReportPrintHtml() {
+  const reportContent = document.getElementById('report-content');
+  if (!reportContent) return '';
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; padding: 30px; font-size: 13px; color: #333; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  h2 { font-size: 16px; margin-bottom: 10px; }
+  h3 { font-size: 14px; margin-bottom: 8px; }
+  .print-header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #333; padding-bottom: 12px; }
+  .print-header .hotel { font-size: 18px; font-weight: bold; }
+  .print-header .date { font-size: 12px; color: #666; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+  th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid #ddd; font-size: 12px; }
+  th { background: #f5f5f5; font-weight: 600; }
+  .stats-grid { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .stat-card { border: 1px solid #ddd; border-radius: 6px; padding: 12px 16px; text-align: center; flex: 1; min-width: 100px; }
+  .stat-value { font-size: 18px; font-weight: 700; }
+  .stat-label { font-size: 11px; color: #666; margin-top: 2px; }
+  .profit-positive { color: #16a34a; }
+  .profit-negative { color: #dc2626; }
+  .row-low-stock { background: #fff5f5; }
+  .payment-breakdown { display: flex; gap: 10px; margin-bottom: 16px; }
+  .payment-card { border: 1px solid #ddd; border-radius: 6px; padding: 10px 16px; text-align: center; }
+  .payment-method { font-size: 11px; color: #666; }
+  .payment-amount { font-size: 16px; font-weight: 600; }
+  .chart-bars, .chart-legend, .report-tabs, .report-date-picker button, #report-print-btn, #report-pdf-btn { display: none; }
+  @media print { body { padding: 10px; } }
+</style></head><body>
+  <div class="print-header">
+    <div class="hotel">${HOTEL_NAME} - ${HOTEL_TAGLINE}</div>
+    <h1>Report</h1>
+    <div class="date">Generated: ${new Date().toLocaleString('en-GB')}</div>
+  </div>
+  ${reportContent.innerHTML}
+</body></html>`;
+}
+
+async function printCurrentReport() {
+  const html = buildReportPrintHtml();
+  if (html) await window.api.printReceipt(html);
+}
+
+async function saveCurrentReportPdf() {
+  const html = buildReportPrintHtml();
+  if (html) await window.api.saveReceiptPdf(html, `Report-${todayStr()}`);
 }
 
 // =====================================================

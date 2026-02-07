@@ -183,10 +183,16 @@ function createSale({ products: saleProducts, total_amount, waiter_name, custome
   const updateStock = db.prepare(
     'UPDATE products SET current_stock = current_stock - ?, updated_at = datetime(\'now\') WHERE id = ?'
   );
+  const getProduct = db.prepare('SELECT buying_price FROM products WHERE id = ?');
 
   const transaction = db.transaction(() => {
+    // Enrich each item with buying_price for profit tracking
+    const enriched = saleProducts.map((item) => {
+      const prod = getProduct.get(item.product_id);
+      return { ...item, buying_price: prod ? prod.buying_price : 0 };
+    });
     const result = insertSale.run(
-      JSON.stringify(saleProducts), total_amount,
+      JSON.stringify(enriched), total_amount,
       waiter_name, customer_name || null, payment_method || 'Cash'
     );
     for (const item of saleProducts) {
@@ -208,6 +214,140 @@ function getSaleById(id) {
 function getAllSales() {
   const sales = db.prepare('SELECT * FROM sales ORDER BY sale_date DESC').all();
   return sales.map((s) => ({ ...s, products: JSON.parse(s.products) }));
+}
+
+// --- Reports ---
+
+function getSalesByDateRange(startDate, endDate) {
+  const sales = db.prepare(
+    'SELECT * FROM sales WHERE date(sale_date) >= date(?) AND date(sale_date) <= date(?) ORDER BY sale_date DESC'
+  ).all(startDate, endDate);
+  return sales.map((s) => ({ ...s, products: JSON.parse(s.products) }));
+}
+
+function getSalesReport(startDate, endDate) {
+  const sales = getSalesByDateRange(startDate, endDate);
+  const productMap = {};
+
+  let totalRevenue = 0;
+  let totalCost = 0;
+  let totalItems = 0;
+
+  for (const sale of sales) {
+    totalRevenue += sale.total_amount;
+    for (const item of sale.products) {
+      totalItems += item.quantity;
+      const buyPrice = item.buying_price || 0;
+      totalCost += buyPrice * item.quantity;
+
+      const key = item.product_id;
+      if (!productMap[key]) {
+        productMap[key] = {
+          product_id: item.product_id,
+          product_name: item.product_name,
+          size_unit: item.size_unit || '',
+          total_qty: 0,
+          total_revenue: 0,
+          total_cost: 0,
+        };
+      }
+      productMap[key].total_qty += item.quantity;
+      productMap[key].total_revenue += item.subtotal;
+      productMap[key].total_cost += buyPrice * item.quantity;
+    }
+  }
+
+  const totalProfit = totalRevenue - totalCost;
+  const bestSellers = Object.values(productMap)
+    .sort((a, b) => b.total_qty - a.total_qty);
+
+  // Payment method breakdown
+  const paymentBreakdown = {};
+  for (const sale of sales) {
+    paymentBreakdown[sale.payment_method] = (paymentBreakdown[sale.payment_method] || 0) + sale.total_amount;
+  }
+
+  return {
+    startDate,
+    endDate,
+    totalSales: sales.length,
+    totalItems,
+    totalRevenue,
+    totalCost,
+    totalProfit,
+    profitMargin: totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0,
+    bestSellers,
+    paymentBreakdown,
+    sales,
+  };
+}
+
+function getMonthlySummary() {
+  const rows = db.prepare(
+    "SELECT strftime('%Y-%m', sale_date) AS month, products, total_amount FROM sales ORDER BY sale_date"
+  ).all();
+
+  const months = {};
+  for (const row of rows) {
+    const m = row.month;
+    if (!months[m]) {
+      months[m] = { month: m, totalSales: 0, totalRevenue: 0, totalCost: 0, totalItems: 0 };
+    }
+    months[m].totalSales += 1;
+    months[m].totalRevenue += row.total_amount;
+    const items = JSON.parse(row.products);
+    for (const item of items) {
+      months[m].totalItems += item.quantity;
+      months[m].totalCost += (item.buying_price || 0) * item.quantity;
+    }
+  }
+
+  return Object.values(months).map((m) => ({
+    ...m,
+    totalProfit: m.totalRevenue - m.totalCost,
+  })).sort((a, b) => b.month.localeCompare(a.month));
+}
+
+function getInventoryValueReport() {
+  const products = db.prepare('SELECT * FROM products ORDER BY category, name').all();
+
+  let totalBuyingValue = 0;
+  let totalSellingValue = 0;
+
+  const items = products.map((p) => {
+    const buyVal = p.buying_price * p.current_stock;
+    const sellVal = p.selling_price * p.current_stock;
+    totalBuyingValue += buyVal;
+    totalSellingValue += sellVal;
+    return {
+      ...p,
+      stock_buying_value: buyVal,
+      stock_selling_value: sellVal,
+      potential_profit: sellVal - buyVal,
+    };
+  });
+
+  // Category breakdown
+  const categories = {};
+  for (const p of items) {
+    if (!categories[p.category]) {
+      categories[p.category] = { category: p.category, buyingValue: 0, sellingValue: 0, itemCount: 0, stockCount: 0 };
+    }
+    categories[p.category].buyingValue += p.stock_buying_value;
+    categories[p.category].sellingValue += p.stock_selling_value;
+    categories[p.category].itemCount += 1;
+    categories[p.category].stockCount += p.current_stock;
+  }
+
+  return {
+    totalBuyingValue,
+    totalSellingValue,
+    potentialProfit: totalSellingValue - totalBuyingValue,
+    totalProducts: products.length,
+    totalStock: products.reduce((s, p) => s + p.current_stock, 0),
+    items,
+    categories: Object.values(categories).sort((a, b) => b.sellingValue - a.sellingValue),
+  };
 }
 
 // --- Lifecycle ---
@@ -235,4 +375,8 @@ module.exports = {
   createSale,
   getSaleById,
   getAllSales,
+  getSalesByDateRange,
+  getSalesReport,
+  getMonthlySummary,
+  getInventoryValueReport,
 };

@@ -60,6 +60,11 @@ function registerIpcHandlers() {
   ipcMain.handle('sales:getAll', () => database.getAllSales());
   ipcMain.handle('sales:getById', (_e, id) => database.getSaleById(id));
 
+  // Reports
+  ipcMain.handle('reports:salesReport', (_e, start, end) => database.getSalesReport(start, end));
+  ipcMain.handle('reports:monthlySummary', () => database.getMonthlySummary());
+  ipcMain.handle('reports:inventoryValue', () => database.getInventoryValueReport());
+
   // Printing
   ipcMain.handle('print:receipt', async (_e, receiptHtml) => {
     return new Promise((resolve) => {
