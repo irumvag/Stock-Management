@@ -7,9 +7,33 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div id="app">
+  <!-- Login Screen -->
+  <div id="login-screen">
+    <div class="login-container">
+      <div class="login-header">
+        <h1>Stock Manager</h1>
+        <p>Sign in to your account</p>
+      </div>
+      <form id="login-form">
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" required autocomplete="username" autofocus>
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required autocomplete="current-password">
+        </div>
+        <div id="login-error" class="error-message" hidden></div>
+        <button type="submit" class="btn-primary">Sign In</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Main App (hidden until authenticated) -->
+  <div id="app" hidden>
     <nav id="sidebar">
       <h2>Stock Manager</h2>
+      <div id="user-info"></div>
       <ul>
         <li><a href="#" data-view="dashboard" class="active">Dashboard</a></li>
         <li><a href="#" data-view="products">Products</a></li>
@@ -17,6 +41,9 @@
         <li><a href="#" data-view="suppliers">Suppliers</a></li>
         <li><a href="#" data-view="movements">Stock Movements</a></li>
       </ul>
+      <div id="sidebar-footer">
+        <a href="#" id="logout-btn">Sign Out</a>
+      </div>
     </nav>
     <main id="content">
       <h1>Dashboard</h1>

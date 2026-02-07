@@ -1,6 +1,9 @@
 const Database = require('better-sqlite3');
+const bcrypt = require('bcryptjs');
 const path = require('path');
 const { app } = require('electron');
+
+const SALT_ROUNDS = 10;
 
 let db;
 
@@ -13,11 +16,23 @@ function initialize() {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   createTables();
+  seedDefaultAdmin();
   return db;
 }
 
 function createTables() {
   db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      username    TEXT    NOT NULL UNIQUE,
+      password    TEXT    NOT NULL,
+      full_name   TEXT    NOT NULL,
+      role        TEXT    NOT NULL DEFAULT 'staff' CHECK (role IN ('admin', 'manager', 'staff')),
+      is_active   INTEGER NOT NULL DEFAULT 1,
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+      last_login  TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS categories (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       name        TEXT    NOT NULL UNIQUE,
@@ -65,6 +80,59 @@ function createTables() {
     CREATE INDEX IF NOT EXISTS idx_products_category    ON products(category_id);
     CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id);
   `);
+}
+
+// --- Auth / Users ---
+
+function seedDefaultAdmin() {
+  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
+  if (!existing) {
+    const hash = bcrypt.hashSync('admin123', SALT_ROUNDS);
+    db.prepare(
+      'INSERT INTO users (username, password, full_name, role) VALUES (?, ?, ?, ?)'
+    ).run('admin', hash, 'Administrator', 'admin');
+  }
+}
+
+function authenticate(username, password) {
+  const user = db.prepare('SELECT * FROM users WHERE username = ? AND is_active = 1').get(username);
+  if (!user) return { success: false, error: 'Invalid username or password' };
+
+  const match = bcrypt.compareSync(password, user.password);
+  if (!match) return { success: false, error: 'Invalid username or password' };
+
+  db.prepare('UPDATE users SET last_login = datetime(\'now\') WHERE id = ?').run(user.id);
+
+  const { password: _pw, ...safeUser } = user;
+  return { success: true, user: safeUser };
+}
+
+function createUser({ username, password, full_name, role }) {
+  const hash = bcrypt.hashSync(password, SALT_ROUNDS);
+  const stmt = db.prepare(
+    'INSERT INTO users (username, password, full_name, role) VALUES (?, ?, ?, ?)'
+  );
+  const result = stmt.run(username, hash, full_name, role || 'staff');
+  return { id: result.lastInsertRowid, username, full_name, role: role || 'staff' };
+}
+
+function getAllUsers() {
+  return db.prepare(
+    'SELECT id, username, full_name, role, is_active, created_at, last_login FROM users ORDER BY username'
+  ).all();
+}
+
+function changePassword(userId, currentPassword, newPassword) {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  if (!user) return { success: false, error: 'User not found' };
+
+  if (!bcrypt.compareSync(currentPassword, user.password)) {
+    return { success: false, error: 'Current password is incorrect' };
+  }
+
+  const hash = bcrypt.hashSync(newPassword, SALT_ROUNDS);
+  db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hash, userId);
+  return { success: true };
 }
 
 // --- Categories ---
@@ -177,6 +245,10 @@ function close() {
 module.exports = {
   initialize,
   close,
+  authenticate,
+  createUser,
+  getAllUsers,
+  changePassword,
   getAllCategories,
   createCategory,
   getAllSuppliers,

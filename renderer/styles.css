@@ -76,3 +76,133 @@ th {
   background: #f8fafc;
   font-weight: 600;
 }
+
+/* --- Login Screen --- */
+
+#login-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+}
+
+.login-container {
+  background: #fff;
+  padding: 40px;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+  width: 380px;
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.login-header h1 {
+  font-size: 24px;
+  color: #1e293b;
+}
+
+.login-header p {
+  color: #64748b;
+  margin-top: 6px;
+  font-size: 14px;
+}
+
+.form-group {
+  margin-bottom: 18px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #334155;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+}
+
+.btn-primary {
+  width: 100%;
+  padding: 10px;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-primary:hover {
+  background: #2563eb;
+}
+
+.error-message {
+  background: #fef2f2;
+  color: #dc2626;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-bottom: 14px;
+  border: 1px solid #fecaca;
+}
+
+/* --- User info in sidebar --- */
+
+#user-info {
+  padding: 12px 20px;
+  border-bottom: 1px solid #334155;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+#user-info .user-name {
+  color: #fff;
+  font-weight: 500;
+}
+
+#user-info .user-role {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+#sidebar-footer {
+  margin-top: auto;
+  padding: 12px 20px;
+  border-top: 1px solid #334155;
+}
+
+#sidebar-footer a {
+  color: #94a3b8;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+#sidebar-footer a:hover {
+  color: #ef4444;
+}
+
+#sidebar {
+  display: flex;
+  flex-direction: column;
+}

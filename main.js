@@ -36,6 +36,12 @@ app.on('window-all-closed', () => {
 // --- IPC Handlers ---
 
 function registerIpcHandlers() {
+  // Auth
+  ipcMain.handle('auth:login', (_e, username, password) => database.authenticate(username, password));
+  ipcMain.handle('auth:createUser', (_e, user) => database.createUser(user));
+  ipcMain.handle('auth:getUsers', () => database.getAllUsers());
+  ipcMain.handle('auth:changePassword', (_e, userId, currentPw, newPw) => database.changePassword(userId, currentPw, newPw));
+
   // Products
   ipcMain.handle('products:getAll', () => database.getAllProducts());
   ipcMain.handle('products:getById', (_e, id) => database.getProductById(id));
