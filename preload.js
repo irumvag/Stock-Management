@@ -25,4 +25,5 @@ contextBridge.exposeInMainWorld('api', {
 
   // Printing
   printReceipt: (html) => ipcRenderer.invoke('print:receipt', html),
+  saveReceiptPdf: (html, defaultName) => ipcRenderer.invoke('print:savePdf', html, defaultName),
 });

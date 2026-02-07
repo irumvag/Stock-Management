@@ -1,4 +1,5 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const fs = require('fs');
 const path = require('path');
 const database = require('./database');
 
@@ -64,8 +65,8 @@ function registerIpcHandlers() {
     return new Promise((resolve) => {
       receiptWindow = new BrowserWindow({
         show: false,
-        width: 300,
-        height: 600,
+        width: 302,
+        height: 800,
         webPreferences: { contextIsolation: true, nodeIntegration: false },
       });
 
@@ -77,6 +78,44 @@ function registerIpcHandlers() {
           receiptWindow = null;
           resolve({ success });
         });
+      });
+    });
+  });
+
+  // Save as PDF
+  ipcMain.handle('print:savePdf', async (_e, receiptHtml, defaultName) => {
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save Receipt as PDF',
+      defaultPath: path.join(app.getPath('documents'), `${defaultName}.pdf`),
+      filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+    });
+
+    if (canceled || !filePath) return { success: false };
+
+    return new Promise((resolve) => {
+      const pdfWindow = new BrowserWindow({
+        show: false,
+        width: 302,
+        height: 800,
+        webPreferences: { contextIsolation: true, nodeIntegration: false },
+      });
+
+      pdfWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(receiptHtml)}`);
+
+      pdfWindow.webContents.on('did-finish-load', async () => {
+        try {
+          const pdfData = await pdfWindow.webContents.printToPDF({
+            printBackground: true,
+            pageSize: { width: 80000, height: 297000 },
+            margins: { top: 0, bottom: 0, left: 0, right: 0 },
+          });
+          fs.writeFileSync(filePath, pdfData);
+          pdfWindow.close();
+          resolve({ success: true, filePath });
+        } catch (err) {
+          pdfWindow.close();
+          resolve({ success: false, error: err.message });
+        }
       });
     });
   });

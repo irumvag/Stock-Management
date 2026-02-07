@@ -391,6 +391,7 @@ async function completeSale() {
     products: cart.map((item) => ({
       product_id: item.product_id,
       product_name: item.product_name,
+      size_unit: item.size_unit,
       quantity: item.quantity,
       unit_price: item.unit_price,
       subtotal: item.subtotal,
@@ -417,41 +418,74 @@ async function completeSale() {
 // RECEIPT
 // =====================================================
 
+const HOTEL_NAME = 'Grand Hotel';
+const HOTEL_TAGLINE = 'Bar & Restaurant';
+const HOTEL_ADDRESS = 'Kigali, Rwanda';
+const HOTEL_PHONE = '+250 788 000 000';
+
 let lastSaleReceipt = null;
+
+function formatReceiptDate(dateStr) {
+  const d = new Date(dateStr);
+  const date = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return { date, time };
+}
+
+function padReceiptNo(id) {
+  return String(id).padStart(6, '0');
+}
 
 function showReceipt(sale) {
   lastSaleReceipt = sale;
   const receiptContent = document.getElementById('receipt-content');
-
-  const date = new Date(sale.sale_date).toLocaleString();
+  const { date, time } = formatReceiptDate(sale.sale_date);
   const items = sale.products;
+  const itemCount = items.reduce((s, i) => s + i.quantity, 0);
 
   receiptContent.innerHTML = `
     <div class="receipt">
-      <div class="receipt-header">
-        <strong>Stock Manager</strong><br>
-        Receipt #${sale.id}
+      <div class="receipt-logo">
+        <div class="receipt-logo-icon">H</div>
       </div>
+      <div class="receipt-brand">
+        <div class="receipt-hotel-name">${escapeHtml(HOTEL_NAME)}</div>
+        <div class="receipt-hotel-tagline">${escapeHtml(HOTEL_TAGLINE)}</div>
+        <div class="receipt-hotel-address">${escapeHtml(HOTEL_ADDRESS)}</div>
+        <div class="receipt-hotel-phone">${escapeHtml(HOTEL_PHONE)}</div>
+      </div>
+      <div class="receipt-divider"></div>
+      <div class="receipt-number">Receipt #${padReceiptNo(sale.id)}</div>
       <div class="receipt-meta">
-        <div>Date: ${escapeHtml(date)}</div>
-        <div>Waiter: ${escapeHtml(sale.waiter_name)}</div>
-        ${sale.customer_name ? `<div>Customer: ${escapeHtml(sale.customer_name)}</div>` : ''}
-        <div>Payment: ${escapeHtml(sale.payment_method)}</div>
+        <div class="receipt-meta-row"><span>Date:</span><span>${escapeHtml(date)}</span></div>
+        <div class="receipt-meta-row"><span>Time:</span><span>${escapeHtml(time)}</span></div>
+        <div class="receipt-meta-row"><span>Waiter:</span><span>${escapeHtml(sale.waiter_name)}</span></div>
+        ${sale.customer_name ? `<div class="receipt-meta-row"><span>Customer:</span><span>${escapeHtml(sale.customer_name)}</span></div>` : ''}
+        <div class="receipt-meta-row"><span>Payment:</span><span>${escapeHtml(sale.payment_method)}</span></div>
       </div>
+      <div class="receipt-divider"></div>
       <table class="receipt-table">
-        <thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Subtotal</th></tr></thead>
+        <thead><tr><th>Item</th><th>Size</th><th>Qty</th><th>Price</th><th>Subtotal</th></tr></thead>
         <tbody>
           ${items.map((item) => `
             <tr>
               <td>${escapeHtml(item.product_name)}</td>
+              <td>${escapeHtml(item.size_unit || '')}</td>
               <td>${item.quantity}</td>
               <td>${item.unit_price.toFixed(2)}</td>
               <td>${item.subtotal.toFixed(2)}</td>
             </tr>`).join('')}
         </tbody>
       </table>
-      <div class="receipt-total">
-        <strong>Total: ${sale.total_amount.toFixed(2)}</strong>
+      <div class="receipt-divider"></div>
+      <div class="receipt-summary">
+        <div class="receipt-summary-row"><span>Items:</span><span>${itemCount}</span></div>
+        <div class="receipt-summary-row receipt-grand-total"><span>TOTAL:</span><span>${sale.total_amount.toFixed(2)}</span></div>
+      </div>
+      <div class="receipt-divider"></div>
+      <div class="receipt-footer">
+        Thank you for visiting ${escapeHtml(HOTEL_NAME)}!<br>
+        We look forward to serving you again.
       </div>
     </div>`;
 
@@ -459,39 +493,64 @@ function showReceipt(sale) {
 }
 
 function buildReceiptPrintHtml(sale) {
-  const date = new Date(sale.sale_date).toLocaleString();
+  const { date, time } = formatReceiptDate(sale.sale_date);
   const items = sale.products;
+  const itemCount = items.reduce((s, i) => s + i.quantity, 0);
 
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><style>
-  body { font-family: 'Courier New', monospace; width: 280px; margin: 0 auto; padding: 10px; font-size: 12px; }
-  h2 { text-align: center; margin: 0 0 4px; font-size: 16px; }
-  .center { text-align: center; }
-  .meta { margin: 8px 0; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 6px 0; }
-  table { width: 100%; border-collapse: collapse; margin: 8px 0; }
-  th, td { text-align: left; padding: 2px 0; }
-  th:last-child, td:last-child { text-align: right; }
-  th:nth-child(2), td:nth-child(2) { text-align: center; }
-  th:nth-child(3), td:nth-child(3) { text-align: right; }
-  .total { border-top: 1px dashed #000; padding-top: 6px; font-size: 14px; font-weight: bold; text-align: right; }
-  .footer { text-align: center; margin-top: 12px; font-size: 11px; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Courier New', monospace; width: 302px; margin: 0 auto; padding: 12px; font-size: 12px; color: #000; }
+  .logo { text-align: center; margin-bottom: 2px; font-size: 28px; font-weight: bold; letter-spacing: 2px; }
+  .hotel-name { text-align: center; font-size: 18px; font-weight: bold; margin-bottom: 1px; }
+  .tagline { text-align: center; font-size: 11px; margin-bottom: 1px; }
+  .contact { text-align: center; font-size: 10px; color: #444; margin-bottom: 2px; }
+  .divider { border-top: 1px dashed #000; margin: 8px 0; }
+  .receipt-no { text-align: center; font-weight: bold; font-size: 13px; margin-bottom: 6px; }
+  .meta-row { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 1px; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; }
+  th { text-align: left; font-size: 10px; border-bottom: 1px solid #000; padding: 3px 2px; text-transform: uppercase; }
+  td { padding: 3px 2px; font-size: 11px; border-bottom: 1px dotted #ccc; }
+  th:nth-child(3), td:nth-child(3) { text-align: center; }
+  th:nth-child(4), td:nth-child(4),
+  th:nth-child(5), td:nth-child(5) { text-align: right; }
+  .summary-row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 2px; }
+  .grand-total { font-size: 16px; font-weight: bold; border-top: 2px solid #000; padding-top: 4px; margin-top: 4px; }
+  .footer { text-align: center; font-size: 11px; margin-top: 10px; line-height: 1.5; }
+  .footer-thanks { font-weight: bold; font-size: 12px; }
 </style></head><body>
-  <h2>Stock Manager</h2>
-  <p class="center">Receipt #${sale.id}</p>
-  <div class="meta">
-    <div>Date: ${date}</div>
-    <div>Waiter: ${sale.waiter_name}</div>
-    ${sale.customer_name ? `<div>Customer: ${sale.customer_name}</div>` : ''}
-    <div>Payment: ${sale.payment_method}</div>
-  </div>
+  <div class="logo">H</div>
+  <div class="hotel-name">${HOTEL_NAME}</div>
+  <div class="tagline">${HOTEL_TAGLINE}</div>
+  <div class="contact">${HOTEL_ADDRESS} | ${HOTEL_PHONE}</div>
+  <div class="divider"></div>
+  <div class="receipt-no">Receipt #${padReceiptNo(sale.id)}</div>
+  <div class="meta-row"><span>Date:</span><span>${date}</span></div>
+  <div class="meta-row"><span>Time:</span><span>${time}</span></div>
+  <div class="meta-row"><span>Waiter:</span><span>${sale.waiter_name}</span></div>
+  ${sale.customer_name ? `<div class="meta-row"><span>Customer:</span><span>${sale.customer_name}</span></div>` : ''}
+  <div class="meta-row"><span>Payment:</span><span>${sale.payment_method}</span></div>
+  <div class="divider"></div>
   <table>
-    <thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
+    <thead><tr><th>Item</th><th>Size</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
     <tbody>
-      ${items.map((i) => `<tr><td>${i.product_name}</td><td>${i.quantity}</td><td>${i.unit_price.toFixed(2)}</td><td>${i.subtotal.toFixed(2)}</td></tr>`).join('')}
+      ${items.map((i) => `<tr>
+        <td>${i.product_name}</td>
+        <td>${i.size_unit || ''}</td>
+        <td>${i.quantity}</td>
+        <td>${i.unit_price.toFixed(2)}</td>
+        <td>${i.subtotal.toFixed(2)}</td>
+      </tr>`).join('')}
     </tbody>
   </table>
-  <div class="total">TOTAL: ${sale.total_amount.toFixed(2)}</div>
-  <p class="footer">Thank you for your purchase!</p>
+  <div class="divider"></div>
+  <div class="summary-row"><span>Items:</span><span>${itemCount}</span></div>
+  <div class="summary-row grand-total"><span>TOTAL:</span><span>${sale.total_amount.toFixed(2)}</span></div>
+  <div class="divider"></div>
+  <div class="footer">
+    <div class="footer-thanks">Thank you for visiting ${HOTEL_NAME}!</div>
+    We look forward to serving you again.
+  </div>
 </body></html>`;
 }
 
@@ -500,6 +559,10 @@ document.getElementById('receipt-done-btn').addEventListener('click', () => { re
 document.getElementById('receipt-print-btn').addEventListener('click', async () => {
   if (!lastSaleReceipt) return;
   await window.api.printReceipt(buildReceiptPrintHtml(lastSaleReceipt));
+});
+document.getElementById('receipt-pdf-btn').addEventListener('click', async () => {
+  if (!lastSaleReceipt) return;
+  await window.api.saveReceiptPdf(buildReceiptPrintHtml(lastSaleReceipt), `Receipt-${padReceiptNo(lastSaleReceipt.id)}`);
 });
 
 // =====================================================

@@ -693,52 +693,150 @@ th {
 /* --- Receipt --- */
 
 .modal-receipt {
-  width: 440px;
+  width: 460px;
 }
 
 .receipt {
   font-size: 14px;
+  font-family: 'Segoe UI', Roboto, sans-serif;
 }
 
-.receipt-header {
+.receipt-logo {
   text-align: center;
-  margin-bottom: 14px;
-  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+.receipt-logo-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background: #1e293b;
+  color: #fff;
+  border-radius: 10px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.receipt-brand {
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.receipt-hotel-name {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1e293b;
+  letter-spacing: 1px;
+}
+
+.receipt-hotel-tagline {
+  font-size: 13px;
+  color: #64748b;
+  margin-bottom: 2px;
+}
+
+.receipt-hotel-address,
+.receipt-hotel-phone {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.receipt-divider {
+  border-top: 1px dashed #cbd5e1;
+  margin: 12px 0;
+}
+
+.receipt-number {
+  text-align: center;
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 10px;
+  color: #334155;
 }
 
 .receipt-meta {
   font-size: 13px;
   color: #475569;
-  margin-bottom: 14px;
-  padding-bottom: 10px;
-  border-bottom: 1px dashed #cbd5e1;
+  margin-bottom: 4px;
 }
 
-.receipt-meta div {
-  margin-bottom: 2px;
+.receipt-meta-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 3px;
+}
+
+.receipt-meta-row span:first-child {
+  color: #94a3b8;
 }
 
 .receipt-table {
   font-size: 13px;
   box-shadow: none;
+  margin: 0;
 }
 
 .receipt-table th {
   background: transparent;
   border-bottom: 1px solid #cbd5e1;
-  font-size: 12px;
-  padding: 6px 8px;
+  font-size: 11px;
+  padding: 6px 6px;
+  text-transform: uppercase;
+  color: #64748b;
+  letter-spacing: 0.3px;
 }
 
 .receipt-table td {
-  padding: 6px 8px;
+  padding: 6px 6px;
   border-bottom: 1px solid #f1f5f9;
 }
 
-.receipt-total {
+.receipt-table th:last-child,
+.receipt-table td:last-child {
   text-align: right;
-  font-size: 18px;
-  padding-top: 10px;
-  border-top: 1px dashed #cbd5e1;
-  margin-top: 8px;
+}
+
+.receipt-table th:nth-child(3),
+.receipt-table td:nth-child(3) {
+  text-align: center;
+}
+
+.receipt-table th:nth-child(4),
+.receipt-table td:nth-child(4) {
+  text-align: right;
+}
+
+.receipt-summary {
+  padding: 4px 0;
+}
+
+.receipt-summary-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  margin-bottom: 4px;
+  color: #475569;
+}
+
+.receipt-grand-total {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1e293b;
+  padding-top: 6px;
+  border-top: 2px solid #1e293b;
+  margin-top: 4px;
+}
+
+.receipt-footer {
+  text-align: center;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.receipt-actions {
+  gap: 8px;
 }
