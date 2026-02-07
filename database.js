@@ -23,62 +23,40 @@ function initialize() {
 function createTables() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      username    TEXT    NOT NULL UNIQUE,
-      password    TEXT    NOT NULL,
-      full_name   TEXT    NOT NULL,
-      role        TEXT    NOT NULL DEFAULT 'staff' CHECK (role IN ('admin', 'manager', 'staff')),
-      is_active   INTEGER NOT NULL DEFAULT 1,
-      created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-      last_login  TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS categories (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      name        TEXT    NOT NULL UNIQUE,
-      description TEXT,
-      created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS suppliers (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
-      name            TEXT    NOT NULL,
-      contact_person  TEXT,
-      email           TEXT,
-      phone           TEXT,
-      address         TEXT,
-      created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      username      TEXT    NOT NULL UNIQUE,
+      password_hash TEXT    NOT NULL,
+      role          TEXT    NOT NULL DEFAULT 'Waiter' CHECK (role IN ('Manager', 'Waiter')),
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS products (
-      id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      name          TEXT    NOT NULL,
-      sku           TEXT    NOT NULL UNIQUE,
-      description   TEXT,
-      category_id   INTEGER,
-      supplier_id   INTEGER,
-      quantity       INTEGER NOT NULL DEFAULT 0,
-      price         REAL    NOT NULL DEFAULT 0,
-      reorder_level INTEGER NOT NULL DEFAULT 0,
-      created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
-      updated_at    TEXT    NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
-      FOREIGN KEY (supplier_id) REFERENCES suppliers(id)  ON DELETE SET NULL
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      name            TEXT    NOT NULL,
+      category        TEXT    NOT NULL,
+      size_unit       TEXT    NOT NULL,
+      buying_price    REAL    NOT NULL DEFAULT 0,
+      selling_price   REAL    NOT NULL DEFAULT 0,
+      current_stock   INTEGER NOT NULL DEFAULT 0,
+      min_stock_alert INTEGER NOT NULL DEFAULT 0,
+      created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
-    CREATE TABLE IF NOT EXISTS stock_movements (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      product_id  INTEGER NOT NULL,
-      type        TEXT    NOT NULL CHECK (type IN ('in', 'out', 'adjustment')),
-      quantity    INTEGER NOT NULL,
-      reason      TEXT,
-      created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    CREATE TABLE IF NOT EXISTS sales (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      sale_date       TEXT    NOT NULL DEFAULT (datetime('now')),
+      products        TEXT    NOT NULL,
+      total_amount    REAL    NOT NULL DEFAULT 0,
+      waiter_name     TEXT    NOT NULL,
+      customer_name   TEXT,
+      payment_method  TEXT    NOT NULL DEFAULT 'Cash' CHECK (payment_method IN ('Cash', 'Card', 'Mobile Money')),
+      created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
-    CREATE INDEX IF NOT EXISTS idx_products_sku         ON products(sku);
-    CREATE INDEX IF NOT EXISTS idx_products_category    ON products(category_id);
-    CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id);
+    CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+    CREATE INDEX IF NOT EXISTS idx_products_name     ON products(name);
+    CREATE INDEX IF NOT EXISTS idx_sales_date        ON sales(sale_date);
   `);
 }
 
@@ -89,36 +67,34 @@ function seedDefaultAdmin() {
   if (!existing) {
     const hash = bcrypt.hashSync('admin123', SALT_ROUNDS);
     db.prepare(
-      'INSERT INTO users (username, password, full_name, role) VALUES (?, ?, ?, ?)'
-    ).run('admin', hash, 'Administrator', 'admin');
+      'INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)'
+    ).run('admin', hash, 'Manager');
   }
 }
 
 function authenticate(username, password) {
-  const user = db.prepare('SELECT * FROM users WHERE username = ? AND is_active = 1').get(username);
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user) return { success: false, error: 'Invalid username or password' };
 
-  const match = bcrypt.compareSync(password, user.password);
+  const match = bcrypt.compareSync(password, user.password_hash);
   if (!match) return { success: false, error: 'Invalid username or password' };
 
-  db.prepare('UPDATE users SET last_login = datetime(\'now\') WHERE id = ?').run(user.id);
-
-  const { password: _pw, ...safeUser } = user;
+  const { password_hash, ...safeUser } = user;
   return { success: true, user: safeUser };
 }
 
-function createUser({ username, password, full_name, role }) {
+function createUser({ username, password, role }) {
   const hash = bcrypt.hashSync(password, SALT_ROUNDS);
   const stmt = db.prepare(
-    'INSERT INTO users (username, password, full_name, role) VALUES (?, ?, ?, ?)'
+    'INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)'
   );
-  const result = stmt.run(username, hash, full_name, role || 'staff');
-  return { id: result.lastInsertRowid, username, full_name, role: role || 'staff' };
+  const result = stmt.run(username, hash, role || 'Waiter');
+  return { id: result.lastInsertRowid, username, role: role || 'Waiter' };
 }
 
 function getAllUsers() {
   return db.prepare(
-    'SELECT id, username, full_name, role, is_active, created_at, last_login FROM users ORDER BY username'
+    'SELECT id, username, role, created_at FROM users ORDER BY username'
   ).all();
 }
 
@@ -126,83 +102,69 @@ function changePassword(userId, currentPassword, newPassword) {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   if (!user) return { success: false, error: 'User not found' };
 
-  if (!bcrypt.compareSync(currentPassword, user.password)) {
+  if (!bcrypt.compareSync(currentPassword, user.password_hash)) {
     return { success: false, error: 'Current password is incorrect' };
   }
 
   const hash = bcrypt.hashSync(newPassword, SALT_ROUNDS);
-  db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hash, userId);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, userId);
   return { success: true };
-}
-
-// --- Categories ---
-
-function getAllCategories() {
-  return db.prepare('SELECT * FROM categories ORDER BY name').all();
-}
-
-function createCategory({ name, description }) {
-  const stmt = db.prepare('INSERT INTO categories (name, description) VALUES (?, ?)');
-  const result = stmt.run(name, description || null);
-  return { id: result.lastInsertRowid, name, description };
-}
-
-// --- Suppliers ---
-
-function getAllSuppliers() {
-  return db.prepare('SELECT * FROM suppliers ORDER BY name').all();
-}
-
-function createSupplier({ name, contact_person, email, phone, address }) {
-  const stmt = db.prepare(
-    'INSERT INTO suppliers (name, contact_person, email, phone, address) VALUES (?, ?, ?, ?, ?)'
-  );
-  const result = stmt.run(name, contact_person || null, email || null, phone || null, address || null);
-  return { id: result.lastInsertRowid, name };
 }
 
 // --- Products ---
 
 function getAllProducts() {
-  return db.prepare(`
-    SELECT p.*, c.name AS category_name
-    FROM products p
-    LEFT JOIN categories c ON p.category_id = c.id
-    ORDER BY p.name
-  `).all();
+  return db.prepare('SELECT * FROM products ORDER BY name').all();
 }
 
 function getProductById(id) {
-  return db.prepare(`
-    SELECT p.*, c.name AS category_name
-    FROM products p
-    LEFT JOIN categories c ON p.category_id = c.id
-    WHERE p.id = ?
-  `).get(id);
+  return db.prepare('SELECT * FROM products WHERE id = ?').get(id);
 }
 
-function createProduct({ name, sku, description, category_id, supplier_id, quantity, price, reorder_level }) {
+function getProductsByCategory(category) {
+  return db.prepare('SELECT * FROM products WHERE category = ? ORDER BY name').all(category);
+}
+
+function searchProducts(query) {
+  const pattern = `%${query}%`;
+  return db.prepare(
+    'SELECT * FROM products WHERE name LIKE ? OR category LIKE ? OR size_unit LIKE ? ORDER BY name'
+  ).all(pattern, pattern, pattern);
+}
+
+function getCategories() {
+  return db.prepare('SELECT DISTINCT category FROM products ORDER BY category').all()
+    .map((r) => r.category);
+}
+
+function getLowStockProducts() {
+  return db.prepare(
+    'SELECT * FROM products WHERE current_stock <= min_stock_alert ORDER BY current_stock ASC'
+  ).all();
+}
+
+function createProduct({ name, category, size_unit, buying_price, selling_price, current_stock, min_stock_alert }) {
   const stmt = db.prepare(`
-    INSERT INTO products (name, sku, description, category_id, supplier_id, quantity, price, reorder_level)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO products (name, category, size_unit, buying_price, selling_price, current_stock, min_stock_alert)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
-    name, sku, description || null,
-    category_id || null, supplier_id || null,
-    quantity || 0, price || 0, reorder_level || 0
+    name, category, size_unit,
+    buying_price || 0, selling_price || 0,
+    current_stock || 0, min_stock_alert || 0
   );
   return getProductById(result.lastInsertRowid);
 }
 
-function updateProduct({ id, name, sku, description, category_id, supplier_id, quantity, price, reorder_level }) {
+function updateProduct({ id, name, category, size_unit, buying_price, selling_price, current_stock, min_stock_alert }) {
   const stmt = db.prepare(`
     UPDATE products
-    SET name = ?, sku = ?, description = ?, category_id = ?, supplier_id = ?,
-        quantity = ?, price = ?, reorder_level = ?, updated_at = datetime('now')
+    SET name = ?, category = ?, size_unit = ?, buying_price = ?, selling_price = ?,
+        current_stock = ?, min_stock_alert = ?, updated_at = datetime('now')
     WHERE id = ?
   `);
-  stmt.run(name, sku, description || null, category_id || null, supplier_id || null,
-    quantity, price, reorder_level, id);
+  stmt.run(name, category, size_unit, buying_price, selling_price,
+    current_stock, min_stock_alert, id);
   return getProductById(id);
 }
 
@@ -211,29 +173,41 @@ function deleteProduct(id) {
   return { success: true };
 }
 
-// --- Stock Movements ---
+// --- Sales ---
 
-function recordStockMovement({ product_id, type, quantity, reason }) {
-  const insert = db.prepare(
-    'INSERT INTO stock_movements (product_id, type, quantity, reason) VALUES (?, ?, ?, ?)'
+function createSale({ products: saleProducts, total_amount, waiter_name, customer_name, payment_method }) {
+  const insertSale = db.prepare(`
+    INSERT INTO sales (products, total_amount, waiter_name, customer_name, payment_method)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  const updateStock = db.prepare(
+    'UPDATE products SET current_stock = current_stock - ?, updated_at = datetime(\'now\') WHERE id = ?'
   );
 
-  const updateQty = db.prepare('UPDATE products SET quantity = quantity + ?, updated_at = datetime(\'now\') WHERE id = ?');
-
   const transaction = db.transaction(() => {
-    insert.run(product_id, type, quantity, reason || null);
-    const delta = type === 'out' ? -quantity : quantity;
-    updateQty.run(delta, product_id);
+    const result = insertSale.run(
+      JSON.stringify(saleProducts), total_amount,
+      waiter_name, customer_name || null, payment_method || 'Cash'
+    );
+    for (const item of saleProducts) {
+      updateStock.run(item.quantity, item.product_id);
+    }
+    return result.lastInsertRowid;
   });
 
-  transaction();
-  return getProductById(product_id);
+  const saleId = transaction();
+  return getSaleById(saleId);
 }
 
-function getStockMovements(productId) {
-  return db.prepare(
-    'SELECT * FROM stock_movements WHERE product_id = ? ORDER BY created_at DESC'
-  ).all(productId);
+function getSaleById(id) {
+  const sale = db.prepare('SELECT * FROM sales WHERE id = ?').get(id);
+  if (sale) sale.products = JSON.parse(sale.products);
+  return sale;
+}
+
+function getAllSales() {
+  const sales = db.prepare('SELECT * FROM sales ORDER BY sale_date DESC').all();
+  return sales.map((s) => ({ ...s, products: JSON.parse(s.products) }));
 }
 
 // --- Lifecycle ---
@@ -249,15 +223,16 @@ module.exports = {
   createUser,
   getAllUsers,
   changePassword,
-  getAllCategories,
-  createCategory,
-  getAllSuppliers,
-  createSupplier,
   getAllProducts,
   getProductById,
+  getProductsByCategory,
+  searchProducts,
+  getCategories,
+  getLowStockProducts,
   createProduct,
   updateProduct,
   deleteProduct,
-  recordStockMovement,
-  getStockMovements,
+  createSale,
+  getSaleById,
+  getAllSales,
 };

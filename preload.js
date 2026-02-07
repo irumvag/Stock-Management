@@ -10,19 +10,16 @@ contextBridge.exposeInMainWorld('api', {
   // Products
   getProducts: () => ipcRenderer.invoke('products:getAll'),
   getProduct: (id) => ipcRenderer.invoke('products:getById', id),
+  getProductsByCategory: (category) => ipcRenderer.invoke('products:getByCategory', category),
+  searchProducts: (query) => ipcRenderer.invoke('products:search', query),
+  getCategories: () => ipcRenderer.invoke('products:getCategories'),
+  getLowStockProducts: () => ipcRenderer.invoke('products:getLowStock'),
   createProduct: (product) => ipcRenderer.invoke('products:create', product),
   updateProduct: (product) => ipcRenderer.invoke('products:update', product),
   deleteProduct: (id) => ipcRenderer.invoke('products:delete', id),
 
-  // Categories
-  getCategories: () => ipcRenderer.invoke('categories:getAll'),
-  createCategory: (category) => ipcRenderer.invoke('categories:create', category),
-
-  // Stock movements
-  recordStockMovement: (movement) => ipcRenderer.invoke('stock:record', movement),
-  getStockMovements: (productId) => ipcRenderer.invoke('stock:getByProduct', productId),
-
-  // Suppliers
-  getSuppliers: () => ipcRenderer.invoke('suppliers:getAll'),
-  createSupplier: (supplier) => ipcRenderer.invoke('suppliers:create', supplier),
+  // Sales
+  createSale: (sale) => ipcRenderer.invoke('sales:create', sale),
+  getSales: () => ipcRenderer.invoke('sales:getAll'),
+  getSale: (id) => ipcRenderer.invoke('sales:getById', id),
 });

@@ -45,19 +45,16 @@ function registerIpcHandlers() {
   // Products
   ipcMain.handle('products:getAll', () => database.getAllProducts());
   ipcMain.handle('products:getById', (_e, id) => database.getProductById(id));
+  ipcMain.handle('products:getByCategory', (_e, category) => database.getProductsByCategory(category));
+  ipcMain.handle('products:search', (_e, query) => database.searchProducts(query));
+  ipcMain.handle('products:getCategories', () => database.getCategories());
+  ipcMain.handle('products:getLowStock', () => database.getLowStockProducts());
   ipcMain.handle('products:create', (_e, product) => database.createProduct(product));
   ipcMain.handle('products:update', (_e, product) => database.updateProduct(product));
   ipcMain.handle('products:delete', (_e, id) => database.deleteProduct(id));
 
-  // Categories
-  ipcMain.handle('categories:getAll', () => database.getAllCategories());
-  ipcMain.handle('categories:create', (_e, category) => database.createCategory(category));
-
-  // Stock movements
-  ipcMain.handle('stock:record', (_e, movement) => database.recordStockMovement(movement));
-  ipcMain.handle('stock:getByProduct', (_e, productId) => database.getStockMovements(productId));
-
-  // Suppliers
-  ipcMain.handle('suppliers:getAll', () => database.getAllSuppliers());
-  ipcMain.handle('suppliers:create', (_e, supplier) => database.createSupplier(supplier));
+  // Sales
+  ipcMain.handle('sales:create', (_e, sale) => database.createSale(sale));
+  ipcMain.handle('sales:getAll', () => database.getAllSales());
+  ipcMain.handle('sales:getById', (_e, id) => database.getSaleById(id));
 }
