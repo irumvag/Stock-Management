@@ -394,7 +394,7 @@ function refundSale(saleId) {
 
 function getSalesByDateRange(startDate, endDate) {
   const sales = db.prepare(
-    'SELECT * FROM sales WHERE date(sale_date) >= date(?) AND date(sale_date) <= date(?) ORDER BY sale_date DESC'
+    'SELECT * FROM sales WHERE date(sale_date) >= date(?) AND date(sale_date) <= date(?) AND refunded = 0 ORDER BY sale_date DESC'
   ).all(startDate, endDate);
   return sales.map((s) => ({ ...s, products: JSON.parse(s.products) }));
 }
@@ -458,7 +458,7 @@ function getSalesReport(startDate, endDate) {
 
 function getMonthlySummary() {
   const rows = db.prepare(
-    "SELECT strftime('%Y-%m', sale_date) AS month, products, total_amount FROM sales ORDER BY sale_date"
+    "SELECT strftime('%Y-%m', sale_date) AS month, products, total_amount FROM sales WHERE refunded = 0 ORDER BY sale_date"
   ).all();
 
   const months = {};
@@ -484,7 +484,7 @@ function getMonthlySummary() {
 
 function getWaiterDailyReport(date) {
   const sales = db.prepare(
-    'SELECT * FROM sales WHERE date(sale_date) = date(?) ORDER BY sale_date DESC'
+    'SELECT * FROM sales WHERE date(sale_date) = date(?) AND refunded = 0 ORDER BY sale_date DESC'
   ).all(date);
 
   const waiterMap = {};
