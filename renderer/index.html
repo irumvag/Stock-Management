@@ -24,7 +24,7 @@
           <input type="password" id="password" name="password" required autocomplete="current-password">
         </div>
         <div id="login-error" class="error-message" hidden></div>
-        <button type="submit" class="btn-primary">Sign In</button>
+        <button type="submit" class="btn-primary" style="width:100%">Sign In</button>
       </form>
     </div>
   </div>
@@ -35,12 +35,18 @@
       <h2>Stock Manager</h2>
       <div id="user-info"></div>
       <ul id="nav-links">
-        <li><a href="#" data-view="dashboard" class="active">Dashboard</a></li>
-        <li><a href="#" data-view="pos">Point of Sale</a></li>
-        <li><a href="#" data-view="products">Inventory</a></li>
-        <li><a href="#" data-view="sales">Sales History</a></li>
-        <li><a href="#" data-view="reports">Reports</a></li>
+        <li><a href="#" data-view="dashboard" class="active">Dashboard <span class="shortcut-hint">F1</span></a></li>
+        <li><a href="#" data-view="pos">Point of Sale <span class="shortcut-hint">F2</span></a></li>
+        <li><a href="#" data-view="products">Inventory <span class="shortcut-hint">F3</span></a></li>
+        <li><a href="#" data-view="sales">Sales History <span class="shortcut-hint">F4</span></a></li>
+        <li><a href="#" data-view="reports">Reports <span class="shortcut-hint">F5</span></a></li>
       </ul>
+      <div class="shortcuts-bar">
+        <span class="shortcut-badge"><kbd>F1</kbd>-<kbd>F5</kbd> Navigate</span>
+        <span class="shortcut-badge"><kbd>F9</kbd> Complete Sale</span>
+        <span class="shortcut-badge"><kbd>/</kbd> Search</span>
+        <span class="shortcut-badge"><kbd>Esc</kbd> Close</span>
+      </div>
       <div id="sidebar-footer">
         <a href="#" id="logout-btn">Sign Out</a>
       </div>

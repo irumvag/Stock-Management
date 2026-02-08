@@ -1232,3 +1232,73 @@ function debounce(fn, delay) {
     timer = setTimeout(() => fn.apply(this, args), delay);
   };
 }
+
+// =====================================================
+// KEYBOARD SHORTCUTS
+// =====================================================
+
+const NAV_SHORTCUTS = {
+  F1: 'dashboard',
+  F2: 'pos',
+  F3: 'products',
+  F4: 'sales',
+  F5: 'reports',
+};
+
+document.addEventListener('keydown', (e) => {
+  // Don't trigger shortcuts when typing in inputs
+  const tag = document.activeElement.tagName;
+  const inInput = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
+
+  // Escape: close any open modal
+  if (e.key === 'Escape') {
+    if (!productModal.hidden) { closeProductModal(); e.preventDefault(); return; }
+    if (!deleteModal.hidden) { closeDeleteModal(); e.preventDefault(); return; }
+    if (!receiptModal.hidden) { receiptModal.hidden = true; e.preventDefault(); return; }
+    // If in an input, blur it
+    if (inInput) { document.activeElement.blur(); e.preventDefault(); return; }
+  }
+
+  // Skip remaining shortcuts if not logged in or inside inputs (except F-keys)
+  if (!currentUser) return;
+  const isFKey = e.key.startsWith('F') && e.key.length <= 3;
+
+  // F1-F5: Navigate views
+  if (NAV_SHORTCUTS[e.key]) {
+    e.preventDefault();
+    const view = NAV_SHORTCUTS[e.key];
+    const link = document.querySelector(`[data-view="${view}"]`);
+    if (link) {
+      const active = document.querySelector('#sidebar a.active');
+      if (active) active.classList.remove('active');
+      link.classList.add('active');
+      loadView(view);
+    }
+    return;
+  }
+
+  // F9: Complete Sale (when in POS)
+  if (e.key === 'F9') {
+    e.preventDefault();
+    const completeBtn = document.getElementById('pos-complete-btn');
+    if (completeBtn) completeSale();
+    return;
+  }
+
+  // Slash key: Focus search (when not in input)
+  if (e.key === '/' && !inInput) {
+    e.preventDefault();
+    const posSearch = document.getElementById('pos-search');
+    const invSearch = document.getElementById('search-input');
+    if (posSearch) posSearch.focus();
+    else if (invSearch) invSearch.focus();
+    return;
+  }
+
+  // N key: New product (when not in input, Manager only, in Inventory view)
+  if (e.key === 'n' && !inInput && isManager()) {
+    const addBtn = document.getElementById('add-product-btn');
+    if (addBtn) { e.preventDefault(); openProductModal(); }
+    return;
+  }
+});
