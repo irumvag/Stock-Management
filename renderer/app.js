@@ -267,7 +267,7 @@ async function loadPOS(container) {
         <div class="pos-checkout-form">
           <div class="form-group">
             <label for="pos-waiter">Waiter</label>
-            <input type="text" id="pos-waiter" value="${escapeHtml(currentUser.username)}" placeholder="Waiter name">
+            <input type="text" id="pos-waiter" value="${escapeHtml(currentUser.username)}" readonly>
           </div>
           <div class="form-group">
             <label for="pos-customer">Customer (optional)</label>

@@ -733,6 +733,13 @@ th {
   font-size: 13px;
 }
 
+.pos-checkout-form .form-group input[readonly] {
+  background: #f1f5f9;
+  color: #64748b;
+  cursor: not-allowed;
+  border-color: #e2e8f0;
+}
+
 .pos-complete-btn {
   width: 100%;
   padding: 14px;

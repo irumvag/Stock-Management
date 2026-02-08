@@ -71,8 +71,17 @@ function registerIpcHandlers() {
   ipcMain.handle('reports:waiterDaily', (_e, date) => database.getWaiterDailyReport(date));
   ipcMain.handle('reports:inventoryValue', () => database.getInventoryValueReport());
 
+  // Helper: write HTML to temp file for reliable rendering
+  function writeTempHtml(html) {
+    const tmpPath = path.join(app.getPath('temp'), `receipt-${Date.now()}.html`);
+    fs.writeFileSync(tmpPath, html, 'utf-8');
+    return tmpPath;
+  }
+
   // Printing
   ipcMain.handle('print:receipt', async (_e, receiptHtml) => {
+    const tmpPath = writeTempHtml(receiptHtml);
+
     return new Promise((resolve) => {
       receiptWindow = new BrowserWindow({
         show: false,
@@ -81,14 +90,17 @@ function registerIpcHandlers() {
         webPreferences: { contextIsolation: true, nodeIntegration: false },
       });
 
-      receiptWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(receiptHtml)}`);
+      receiptWindow.loadFile(tmpPath);
 
       receiptWindow.webContents.on('did-finish-load', () => {
-        receiptWindow.webContents.print({ silent: false, printBackground: true }, (success) => {
-          receiptWindow.close();
-          receiptWindow = null;
-          resolve({ success });
-        });
+        setTimeout(() => {
+          receiptWindow.webContents.print({ silent: false, printBackground: true }, (success) => {
+            receiptWindow.close();
+            receiptWindow = null;
+            try { fs.unlinkSync(tmpPath); } catch (_) {}
+            resolve({ success });
+          });
+        }, 500);
       });
     });
   });
@@ -103,6 +115,8 @@ function registerIpcHandlers() {
 
     if (canceled || !filePath) return { success: false };
 
+    const tmpPath = writeTempHtml(receiptHtml);
+
     return new Promise((resolve) => {
       const pdfWindow = new BrowserWindow({
         show: false,
@@ -111,22 +125,26 @@ function registerIpcHandlers() {
         webPreferences: { contextIsolation: true, nodeIntegration: false },
       });
 
-      pdfWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(receiptHtml)}`);
+      pdfWindow.loadFile(tmpPath);
 
-      pdfWindow.webContents.on('did-finish-load', async () => {
-        try {
-          const pdfData = await pdfWindow.webContents.printToPDF({
-            printBackground: true,
-            pageSize: { width: 80000, height: 297000 },
-            margins: { top: 0, bottom: 0, left: 0, right: 0 },
-          });
-          fs.writeFileSync(filePath, pdfData);
-          pdfWindow.close();
-          resolve({ success: true, filePath });
-        } catch (err) {
-          pdfWindow.close();
-          resolve({ success: false, error: err.message });
-        }
+      pdfWindow.webContents.on('did-finish-load', () => {
+        setTimeout(async () => {
+          try {
+            const pdfData = await pdfWindow.webContents.printToPDF({
+              printBackground: true,
+              pageSize: { width: 80000, height: 297000 },
+              margins: { top: 0, bottom: 0, left: 0, right: 0 },
+            });
+            fs.writeFileSync(filePath, pdfData);
+            pdfWindow.close();
+            try { fs.unlinkSync(tmpPath); } catch (_) {}
+            resolve({ success: true, filePath });
+          } catch (err) {
+            pdfWindow.close();
+            try { fs.unlinkSync(tmpPath); } catch (_) {}
+            resolve({ success: false, error: err.message });
+          }
+        }, 500);
       });
     });
   });
