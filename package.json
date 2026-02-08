@@ -1,22 +1,69 @@
 {
-  "name": "stock-management",
+  "name": "club-tmp-stock-manager",
   "version": "1.0.0",
-  "description": "Stock Management System built with Electron and SQLite",
+  "description": "Club TMP Stock Management System",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win"
   },
   "repository": {
     "type": "git",
     "url": "http://local_proxy@127.0.0.1:62178/git/irumvag/Stock-Management"
   },
-  "keywords": [],
-  "author": "",
+  "author": "Club TMP",
   "license": "ISC",
   "dependencies": {
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^12.6.2",
-    "electron": "^40.2.1"
+    "better-sqlite3": "^12.6.2"
+  },
+  "devDependencies": {
+    "electron": "^40.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.clubtmp.stockmanager",
+    "productName": "Club TMP Stock Manager",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "database.js",
+      "renderer/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopIcon": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Club TMP Stock Manager",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "build/icon.png",
+      "category": "Office"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "icon": "build/icon.png",
+      "category": "public.app-category.business"
+    }
   }
 }
