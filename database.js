@@ -16,9 +16,19 @@ function initialize() {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   createTables();
+  runMigrations();
   seedDefaultAdmin();
   seedSampleProducts();
   return db;
+}
+
+function runMigrations() {
+  // Add 'refunded' column to sales table if it doesn't exist
+  const cols = db.prepare("PRAGMA table_info(sales)").all();
+  const hasRefunded = cols.some((c) => c.name === 'refunded');
+  if (!hasRefunded) {
+    db.exec("ALTER TABLE sales ADD COLUMN refunded INTEGER NOT NULL DEFAULT 0");
+  }
 }
 
 function createTables() {
@@ -51,7 +61,7 @@ function createTables() {
       total_amount    REAL    NOT NULL DEFAULT 0,
       waiter_name     TEXT    NOT NULL,
       customer_name   TEXT,
-      payment_method  TEXT    NOT NULL DEFAULT 'Cash' CHECK (payment_method IN ('Cash', 'Card', 'Mobile Money', 'REFUNDED')),
+      payment_method  TEXT    NOT NULL DEFAULT 'Cash' CHECK (payment_method IN ('Cash', 'Card', 'Mobile Money')),
       created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -359,7 +369,7 @@ function getAllSales() {
 function refundSale(saleId) {
   const sale = db.prepare('SELECT * FROM sales WHERE id = ?').get(saleId);
   if (!sale) return { success: false, error: 'Sale not found' };
-  if (sale.payment_method === 'REFUNDED') return { success: false, error: 'Sale already refunded' };
+  if (sale.refunded) return { success: false, error: 'Sale already refunded' };
 
   const items = JSON.parse(sale.products);
 
@@ -370,9 +380,9 @@ function refundSale(saleId) {
         "UPDATE products SET current_stock = current_stock + ?, updated_at = datetime('now') WHERE id = ?"
       ).run(item.quantity, item.product_id);
     }
-    // Mark sale as refunded
+    // Mark sale as refunded (keep original payment_method for records)
     db.prepare(
-      "UPDATE sales SET payment_method = 'REFUNDED', total_amount = 0 WHERE id = ?"
+      "UPDATE sales SET refunded = 1 WHERE id = ?"
     ).run(saleId);
   });
 

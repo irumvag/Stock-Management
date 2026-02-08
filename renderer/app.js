@@ -903,7 +903,7 @@ async function loadSalesHistory(container) {
         </thead>
         <tbody>
           ${sales.map((s) => {
-            const isRefunded = s.payment_method === 'REFUNDED';
+            const isRefunded = s.refunded === 1;
             return `
             <tr class="${isRefunded ? 'row-refunded' : ''}">
               <td>${s.id}</td>
@@ -1007,7 +1007,7 @@ function showSaleDetail(sale) {
         <div class="sale-detail-summary-row sale-detail-total"><span>TOTAL:</span><span>${fmtCurrency(sale.total_amount)}</span></div>
       </div>
       <div class="sale-detail-actions">
-        ${sale.payment_method === 'REFUNDED' ? '<span class="refund-badge" style="font-size:14px;padding:6px 16px;">REFUNDED</span>' : `
+        ${sale.refunded === 1 ? '<span class="refund-badge" style="font-size:14px;padding:6px 16px;">REFUNDED</span>' : `
           <button class="btn-primary btn-sm" id="sale-detail-reprint">Reprint Receipt</button>
           <button class="btn-secondary btn-sm" id="sale-detail-pdf">Save as PDF</button>
           <button class="btn-secondary btn-sm" id="sale-detail-print">Print</button>
