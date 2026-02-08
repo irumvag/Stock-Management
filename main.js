@@ -45,6 +45,9 @@ function registerIpcHandlers() {
   ipcMain.handle('auth:createUser', (_e, user) => database.createUser(user));
   ipcMain.handle('auth:getUsers', () => database.getAllUsers());
   ipcMain.handle('auth:changePassword', (_e, userId, currentPw, newPw) => database.changePassword(userId, currentPw, newPw));
+  ipcMain.handle('auth:updateUser', (_e, id, data) => database.updateUser(id, data));
+  ipcMain.handle('auth:resetPassword', (_e, userId, newPw) => database.resetPassword(userId, newPw));
+  ipcMain.handle('auth:deleteUser', (_e, id) => database.deleteUser(id));
 
   // Products
   ipcMain.handle('products:getAll', () => database.getAllProducts());

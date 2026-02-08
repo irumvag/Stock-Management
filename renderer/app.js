@@ -34,7 +34,7 @@ function stopInactivityTracking() {
 }
 
 // Views accessible by role
-const MANAGER_VIEWS = ['dashboard', 'pos', 'products', 'sales', 'reports'];
+const MANAGER_VIEWS = ['dashboard', 'pos', 'products', 'sales', 'reports', 'users'];
 const WAITER_VIEWS = ['pos'];
 
 function getAllowedViews() {
@@ -180,6 +180,9 @@ async function loadView(view) {
       break;
     case 'reports':
       await loadReports(content);
+      break;
+    case 'users':
+      await loadUsers(content);
       break;
   }
 }
@@ -1282,6 +1285,303 @@ document.getElementById('delete-confirm-btn').addEventListener('click', async ()
 });
 
 // =====================================================
+// USER MANAGEMENT (Manager only)
+// =====================================================
+
+let userDeleteTargetId = null;
+
+async function loadUsers(container) {
+  const users = await window.api.getUsers();
+
+  container.innerHTML = `
+    <div class="view-header">
+      <h1>User Management</h1>
+      <button class="btn-primary btn-sm" id="add-user-btn">+ Add User</button>
+    </div>
+    <table>
+      <thead>
+        <tr><th>Username</th><th>Role</th><th>Created</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        ${users.map((u) => `
+          <tr>
+            <td><strong>${escapeHtml(u.username)}</strong>${u.username === 'admin' ? ' <span style="color:#94a3b8;font-size:11px;">(default)</span>' : ''}</td>
+            <td><span class="role-badge role-${u.role.toLowerCase()}">${escapeHtml(u.role)}</span></td>
+            <td>${new Date(u.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+            <td class="actions-cell">
+              <button class="btn-icon btn-edit" data-user-edit="${u.id}" title="Edit user">&#9998;</button>
+              <button class="btn-icon" data-user-reset="${u.id}" title="Reset password">&#128274;</button>
+              ${u.username !== 'admin' ? `<button class="btn-icon btn-delete" data-user-delete="${u.id}" data-user-name="${escapeHtml(u.username)}" title="Delete user">&#128465;</button>` : ''}
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+
+    <!-- Add/Edit User Inline Form -->
+    <div id="user-form-section" hidden>
+      <div style="background:#fff;border-radius:10px;padding:24px;margin-top:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+        <h3 id="user-form-title" style="margin-bottom:16px;">Add New User</h3>
+        <form id="user-form">
+          <input type="hidden" id="uf-id">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="uf-username">Username</label>
+              <input type="text" id="uf-username" required placeholder="Enter username" minlength="3">
+            </div>
+            <div class="form-group">
+              <label for="uf-role">Role</label>
+              <select id="uf-role" required>
+                <option value="Waiter">Waiter</option>
+                <option value="Manager">Manager</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row" id="uf-password-row">
+            <div class="form-group">
+              <label for="uf-password">Password</label>
+              <input type="password" id="uf-password" placeholder="Enter password" minlength="4">
+            </div>
+            <div class="form-group">
+              <label for="uf-password-confirm">Confirm Password</label>
+              <input type="password" id="uf-password-confirm" placeholder="Confirm password">
+            </div>
+          </div>
+          <div id="user-form-error" class="error-message" hidden></div>
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" id="user-form-cancel">Cancel</button>
+            <button type="submit" class="btn-primary" id="user-form-submit">Add User</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Reset Password Section -->
+    <div id="reset-pw-section" hidden>
+      <div style="background:#fff;border-radius:10px;padding:24px;margin-top:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+        <h3 id="reset-pw-title" style="margin-bottom:16px;">Reset Password</h3>
+        <form id="reset-pw-form">
+          <input type="hidden" id="rp-id">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="rp-password">New Password</label>
+              <input type="password" id="rp-password" required placeholder="Enter new password" minlength="4">
+            </div>
+            <div class="form-group">
+              <label for="rp-password-confirm">Confirm Password</label>
+              <input type="password" id="rp-password-confirm" required placeholder="Confirm new password">
+            </div>
+          </div>
+          <div id="reset-pw-error" class="error-message" hidden></div>
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" id="reset-pw-cancel">Cancel</button>
+            <button type="submit" class="btn-primary">Reset Password</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Delete Confirmation -->
+    <div id="user-delete-section" hidden>
+      <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:24px;margin-top:20px;">
+        <h3 style="color:#dc2626;margin-bottom:8px;">Confirm Delete</h3>
+        <p id="user-delete-msg" style="margin-bottom:16px;">Are you sure?</p>
+        <div class="form-actions">
+          <button class="btn-secondary" id="user-delete-cancel">Cancel</button>
+          <button class="btn-danger" id="user-delete-confirm">Delete User</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // --- Add User button ---
+  document.getElementById('add-user-btn').addEventListener('click', () => {
+    showUserForm(null);
+  });
+
+  // --- Edit buttons ---
+  container.querySelectorAll('[data-user-edit]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const userId = Number(btn.dataset.userEdit);
+      const allUsers = await window.api.getUsers();
+      const user = allUsers.find((u) => u.id === userId);
+      if (user) showUserForm(user);
+    });
+  });
+
+  // --- Reset password buttons ---
+  container.querySelectorAll('[data-user-reset]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const userId = Number(btn.dataset.userReset);
+      showResetPassword(userId);
+    });
+  });
+
+  // --- Delete buttons ---
+  container.querySelectorAll('[data-user-delete]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      userDeleteTargetId = Number(btn.dataset.userDelete);
+      const name = btn.dataset.userName;
+      document.getElementById('user-delete-msg').textContent = `Are you sure you want to delete user "${name}"? This cannot be undone.`;
+      document.getElementById('user-delete-section').hidden = false;
+      document.getElementById('user-form-section').hidden = true;
+      document.getElementById('reset-pw-section').hidden = true;
+    });
+  });
+
+  // --- Delete confirm/cancel ---
+  document.getElementById('user-delete-cancel').addEventListener('click', () => {
+    document.getElementById('user-delete-section').hidden = true;
+    userDeleteTargetId = null;
+  });
+
+  document.getElementById('user-delete-confirm').addEventListener('click', async () => {
+    if (!userDeleteTargetId) return;
+    const result = await window.api.deleteUser(userDeleteTargetId);
+    if (result.success) {
+      userDeleteTargetId = null;
+      loadUsers(container);
+    } else {
+      alert(result.error || 'Failed to delete user');
+    }
+  });
+
+  // --- User form submit ---
+  document.getElementById('user-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById('user-form-error');
+    errEl.hidden = true;
+
+    const id = document.getElementById('uf-id').value;
+    const username = document.getElementById('uf-username').value.trim();
+    const role = document.getElementById('uf-role').value;
+    const password = document.getElementById('uf-password').value;
+    const passwordConfirm = document.getElementById('uf-password-confirm').value;
+
+    if (username.length < 3) {
+      errEl.textContent = 'Username must be at least 3 characters.';
+      errEl.hidden = false;
+      return;
+    }
+
+    if (id) {
+      // Editing existing user
+      const result = await window.api.updateUser(Number(id), { username, role });
+      if (!result.success) {
+        errEl.textContent = result.error;
+        errEl.hidden = false;
+        return;
+      }
+    } else {
+      // Creating new user
+      if (!password || password.length < 4) {
+        errEl.textContent = 'Password must be at least 4 characters.';
+        errEl.hidden = false;
+        return;
+      }
+      if (password !== passwordConfirm) {
+        errEl.textContent = 'Passwords do not match.';
+        errEl.hidden = false;
+        return;
+      }
+      try {
+        await window.api.createUser({ username, password, role });
+      } catch (err) {
+        errEl.textContent = 'Username already exists.';
+        errEl.hidden = false;
+        return;
+      }
+    }
+
+    loadUsers(container);
+  });
+
+  // --- User form cancel ---
+  document.getElementById('user-form-cancel').addEventListener('click', () => {
+    document.getElementById('user-form-section').hidden = true;
+  });
+
+  // --- Reset password form submit ---
+  document.getElementById('reset-pw-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById('reset-pw-error');
+    errEl.hidden = true;
+
+    const userId = Number(document.getElementById('rp-id').value);
+    const newPw = document.getElementById('rp-password').value;
+    const confirmPw = document.getElementById('rp-password-confirm').value;
+
+    if (!newPw || newPw.length < 4) {
+      errEl.textContent = 'Password must be at least 4 characters.';
+      errEl.hidden = false;
+      return;
+    }
+    if (newPw !== confirmPw) {
+      errEl.textContent = 'Passwords do not match.';
+      errEl.hidden = false;
+      return;
+    }
+
+    const result = await window.api.resetPassword(userId, newPw);
+    if (result.success) {
+      document.getElementById('reset-pw-section').hidden = true;
+      // Show brief success feedback
+      const section = document.getElementById('reset-pw-section');
+      section.hidden = true;
+    } else {
+      errEl.textContent = result.error;
+      errEl.hidden = false;
+    }
+  });
+
+  // --- Reset password cancel ---
+  document.getElementById('reset-pw-cancel').addEventListener('click', () => {
+    document.getElementById('reset-pw-section').hidden = true;
+  });
+}
+
+function showUserForm(user) {
+  document.getElementById('user-form-section').hidden = false;
+  document.getElementById('user-delete-section').hidden = true;
+  document.getElementById('reset-pw-section').hidden = true;
+  document.getElementById('user-form-error').hidden = true;
+
+  const title = document.getElementById('user-form-title');
+  const submitBtn = document.getElementById('user-form-submit');
+  const passwordRow = document.getElementById('uf-password-row');
+
+  if (user) {
+    title.textContent = `Edit User: ${user.username}`;
+    submitBtn.textContent = 'Save Changes';
+    document.getElementById('uf-id').value = user.id;
+    document.getElementById('uf-username').value = user.username;
+    document.getElementById('uf-role').value = user.role;
+    passwordRow.hidden = true; // Don't show password fields when editing
+  } else {
+    title.textContent = 'Add New User';
+    submitBtn.textContent = 'Add User';
+    document.getElementById('uf-id').value = '';
+    document.getElementById('uf-username').value = '';
+    document.getElementById('uf-role').value = 'Waiter';
+    document.getElementById('uf-password').value = '';
+    document.getElementById('uf-password-confirm').value = '';
+    passwordRow.hidden = false;
+  }
+
+  document.getElementById('uf-username').focus();
+}
+
+function showResetPassword(userId) {
+  document.getElementById('reset-pw-section').hidden = false;
+  document.getElementById('user-form-section').hidden = true;
+  document.getElementById('user-delete-section').hidden = true;
+  document.getElementById('reset-pw-error').hidden = true;
+  document.getElementById('rp-id').value = userId;
+  document.getElementById('rp-password').value = '';
+  document.getElementById('rp-password-confirm').value = '';
+  document.getElementById('rp-password').focus();
+}
+
+// =====================================================
 // UTILITIES
 // =====================================================
 
@@ -1310,6 +1610,7 @@ const NAV_SHORTCUTS = {
   F3: 'products',
   F4: 'sales',
   F5: 'reports',
+  F6: 'users',
 };
 
 document.addEventListener('keydown', (e) => {

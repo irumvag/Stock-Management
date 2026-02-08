@@ -6,6 +6,9 @@ contextBridge.exposeInMainWorld('api', {
   createUser: (user) => ipcRenderer.invoke('auth:createUser', user),
   getUsers: () => ipcRenderer.invoke('auth:getUsers'),
   changePassword: (userId, currentPw, newPw) => ipcRenderer.invoke('auth:changePassword', userId, currentPw, newPw),
+  updateUser: (id, data) => ipcRenderer.invoke('auth:updateUser', id, data),
+  resetPassword: (userId, newPw) => ipcRenderer.invoke('auth:resetPassword', userId, newPw),
+  deleteUser: (id) => ipcRenderer.invoke('auth:deleteUser', id),
 
   // Products
   getProducts: () => ipcRenderer.invoke('products:getAll'),

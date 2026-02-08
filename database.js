@@ -194,6 +194,29 @@ function changePassword(userId, currentPassword, newPassword) {
   return { success: true };
 }
 
+function updateUser(id, { username, role }) {
+  const existing = db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').get(username, id);
+  if (existing) return { success: false, error: 'Username already taken' };
+  db.prepare('UPDATE users SET username = ?, role = ? WHERE id = ?').run(username, role, id);
+  return { success: true };
+}
+
+function resetPassword(userId, newPassword) {
+  const user = db.prepare('SELECT id FROM users WHERE id = ?').get(userId);
+  if (!user) return { success: false, error: 'User not found' };
+  const hash = bcrypt.hashSync(newPassword, SALT_ROUNDS);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, userId);
+  return { success: true };
+}
+
+function deleteUser(id) {
+  const user = db.prepare('SELECT username FROM users WHERE id = ?').get(id);
+  if (!user) return { success: false, error: 'User not found' };
+  if (user.username === 'admin') return { success: false, error: 'Cannot delete the default admin account' };
+  db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  return { success: true };
+}
+
 // --- Products ---
 
 function getAllProducts() {
@@ -446,6 +469,9 @@ module.exports = {
   createUser,
   getAllUsers,
   changePassword,
+  updateUser,
+  resetPassword,
+  deleteUser,
   getAllProducts,
   getProductById,
   getProductsByCategory,
