@@ -55,9 +55,43 @@ function createTables() {
       created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS waiters (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT    NOT NULL UNIQUE,
+      active      INTEGER NOT NULL DEFAULT 1,
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS drafts (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      waiter_name     TEXT    NOT NULL,
+      table_number    TEXT    NOT NULL,
+      customer_name   TEXT    DEFAULT '',
+      status          TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'completed')),
+      created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+      completed_at    TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS draft_items (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      draft_id      INTEGER NOT NULL,
+      product_id    INTEGER NOT NULL,
+      product_name  TEXT    NOT NULL,
+      size_unit     TEXT    DEFAULT '',
+      unit_price    REAL    NOT NULL,
+      buying_price  REAL    DEFAULT 0,
+      quantity      INTEGER NOT NULL,
+      subtotal      REAL    NOT NULL,
+      added_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (draft_id) REFERENCES drafts(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
     CREATE INDEX IF NOT EXISTS idx_products_name     ON products(name);
     CREATE INDEX IF NOT EXISTS idx_sales_date        ON sales(sale_date);
+    CREATE INDEX IF NOT EXISTS idx_drafts_status     ON drafts(status);
+    CREATE INDEX IF NOT EXISTS idx_draft_items_draft ON draft_items(draft_id);
   `);
 }
 
@@ -498,6 +532,178 @@ function getInventoryValueReport() {
   };
 }
 
+// --- Waiters (name-only, no password) ---
+
+function getAllWaiters() {
+  return db.prepare('SELECT * FROM waiters ORDER BY name').all();
+}
+
+function getActiveWaiters() {
+  return db.prepare('SELECT * FROM waiters WHERE active = 1 ORDER BY name').all();
+}
+
+function createWaiter(name) {
+  const existing = db.prepare('SELECT id FROM waiters WHERE name = ?').get(name);
+  if (existing) return { success: false, error: 'Waiter name already exists' };
+  const result = db.prepare('INSERT INTO waiters (name) VALUES (?)').run(name);
+  return { success: true, id: result.lastInsertRowid };
+}
+
+function updateWaiter(id, name) {
+  const existing = db.prepare('SELECT id FROM waiters WHERE name = ? AND id != ?').get(name, id);
+  if (existing) return { success: false, error: 'Waiter name already exists' };
+  db.prepare('UPDATE waiters SET name = ? WHERE id = ?').run(name, id);
+  return { success: true };
+}
+
+function toggleWaiter(id, active) {
+  db.prepare('UPDATE waiters SET active = ? WHERE id = ?').run(active ? 1 : 0, id);
+  return { success: true };
+}
+
+function deleteWaiter(id) {
+  db.prepare('DELETE FROM waiters WHERE id = ?').run(id);
+  return { success: true };
+}
+
+// --- Drafts (open tabs) ---
+
+function createDraft({ waiter_name, table_number, customer_name }) {
+  const result = db.prepare(
+    'INSERT INTO drafts (waiter_name, table_number, customer_name) VALUES (?, ?, ?)'
+  ).run(waiter_name, table_number, customer_name || '');
+  return getDraftById(result.lastInsertRowid);
+}
+
+function addItemsToDraft(draftId, items) {
+  const draft = db.prepare('SELECT * FROM drafts WHERE id = ? AND status = ?').get(draftId, 'open');
+  if (!draft) return { success: false, error: 'Draft not found or already completed' };
+
+  const insertItem = db.prepare(
+    'INSERT INTO draft_items (draft_id, product_id, product_name, size_unit, unit_price, buying_price, quantity, subtotal) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  );
+  const updateStock = db.prepare(
+    "UPDATE products SET current_stock = current_stock - ?, updated_at = datetime('now') WHERE id = ?"
+  );
+  const getProduct = db.prepare('SELECT buying_price FROM products WHERE id = ?');
+
+  const transaction = db.transaction(() => {
+    for (const item of items) {
+      const prod = getProduct.get(item.product_id);
+      const buyingPrice = prod ? prod.buying_price : 0;
+      insertItem.run(
+        draftId, item.product_id, item.product_name, item.size_unit || '',
+        item.unit_price, buyingPrice, item.quantity, item.subtotal
+      );
+      updateStock.run(item.quantity, item.product_id);
+    }
+    db.prepare("UPDATE drafts SET updated_at = datetime('now') WHERE id = ?").run(draftId);
+  });
+
+  transaction();
+  return { success: true, draft: getDraftById(draftId) };
+}
+
+function removeItemFromDraft(draftItemId) {
+  const item = db.prepare('SELECT * FROM draft_items WHERE id = ?').get(draftItemId);
+  if (!item) return { success: false, error: 'Item not found' };
+
+  const draft = db.prepare('SELECT status FROM drafts WHERE id = ?').get(item.draft_id);
+  if (!draft || draft.status !== 'open') return { success: false, error: 'Draft is not open' };
+
+  const transaction = db.transaction(() => {
+    db.prepare(
+      "UPDATE products SET current_stock = current_stock + ?, updated_at = datetime('now') WHERE id = ?"
+    ).run(item.quantity, item.product_id);
+    db.prepare('DELETE FROM draft_items WHERE id = ?').run(draftItemId);
+    db.prepare("UPDATE drafts SET updated_at = datetime('now') WHERE id = ?").run(item.draft_id);
+  });
+
+  transaction();
+  return { success: true };
+}
+
+function getDraftById(id) {
+  const draft = db.prepare('SELECT * FROM drafts WHERE id = ?').get(id);
+  if (!draft) return null;
+  draft.items = db.prepare('SELECT * FROM draft_items WHERE draft_id = ? ORDER BY added_at').all(id);
+  draft.total_amount = draft.items.reduce((s, i) => s + i.subtotal, 0);
+  return draft;
+}
+
+function getOpenDrafts() {
+  const drafts = db.prepare("SELECT * FROM drafts WHERE status = 'open' ORDER BY updated_at DESC").all();
+  return drafts.map((d) => {
+    d.items = db.prepare('SELECT * FROM draft_items WHERE draft_id = ? ORDER BY added_at').all(d.id);
+    d.total_amount = d.items.reduce((s, i) => s + i.subtotal, 0);
+    return d;
+  });
+}
+
+function completeDraft(draftId, paymentMethod) {
+  const draft = getDraftById(draftId);
+  if (!draft) return { success: false, error: 'Draft not found' };
+  if (draft.status !== 'open') return { success: false, error: 'Draft already completed' };
+  if (draft.items.length === 0) return { success: false, error: 'Draft has no items' };
+
+  const enriched = draft.items.map((item) => ({
+    product_id: item.product_id,
+    product_name: item.product_name,
+    size_unit: item.size_unit,
+    unit_price: item.unit_price,
+    buying_price: item.buying_price,
+    quantity: item.quantity,
+    subtotal: item.subtotal,
+  }));
+
+  const transaction = db.transaction(() => {
+    // Create the sale from draft (stock already reduced when items were added)
+    const result = db.prepare(
+      'INSERT INTO sales (products, total_amount, waiter_name, customer_name, payment_method) VALUES (?, ?, ?, ?, ?)'
+    ).run(
+      JSON.stringify(enriched), draft.total_amount,
+      draft.waiter_name, draft.customer_name || null, paymentMethod || 'Cash'
+    );
+    // Mark draft as completed
+    db.prepare(
+      "UPDATE drafts SET status = 'completed', completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
+    ).run(draftId);
+    return result.lastInsertRowid;
+  });
+
+  const saleId = transaction();
+  return { success: true, sale: getSaleById(saleId) };
+}
+
+function updateDraft(draftId, { table_number, customer_name }) {
+  const draft = db.prepare("SELECT * FROM drafts WHERE id = ? AND status = 'open'").get(draftId);
+  if (!draft) return { success: false, error: 'Draft not found or already completed' };
+  db.prepare(
+    "UPDATE drafts SET table_number = ?, customer_name = ?, updated_at = datetime('now') WHERE id = ?"
+  ).run(table_number, customer_name || '', draftId);
+  return { success: true };
+}
+
+function deleteDraft(draftId) {
+  const draft = getDraftById(draftId);
+  if (!draft) return { success: false, error: 'Draft not found' };
+  if (draft.status !== 'open') return { success: false, error: 'Cannot delete a completed draft' };
+
+  const transaction = db.transaction(() => {
+    // Restore stock for all items
+    for (const item of draft.items) {
+      db.prepare(
+        "UPDATE products SET current_stock = current_stock + ?, updated_at = datetime('now') WHERE id = ?"
+      ).run(item.quantity, item.product_id);
+    }
+    db.prepare('DELETE FROM draft_items WHERE draft_id = ?').run(draftId);
+    db.prepare('DELETE FROM drafts WHERE id = ?').run(draftId);
+  });
+
+  transaction();
+  return { success: true };
+}
+
 // --- Lifecycle ---
 
 function close() {
@@ -531,4 +737,18 @@ module.exports = {
   getMonthlySummary,
   getWaiterDailyReport,
   getInventoryValueReport,
+  getAllWaiters,
+  getActiveWaiters,
+  createWaiter,
+  updateWaiter,
+  toggleWaiter,
+  deleteWaiter,
+  createDraft,
+  addItemsToDraft,
+  removeItemFromDraft,
+  getDraftById,
+  getOpenDrafts,
+  completeDraft,
+  updateDraft,
+  deleteDraft,
 };

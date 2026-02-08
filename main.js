@@ -65,6 +65,24 @@ function registerIpcHandlers() {
   ipcMain.handle('sales:getAll', () => database.getAllSales());
   ipcMain.handle('sales:getById', (_e, id) => database.getSaleById(id));
 
+  // Waiters (name-only)
+  ipcMain.handle('waiters:getAll', () => database.getAllWaiters());
+  ipcMain.handle('waiters:getActive', () => database.getActiveWaiters());
+  ipcMain.handle('waiters:create', (_e, name) => database.createWaiter(name));
+  ipcMain.handle('waiters:update', (_e, id, name) => database.updateWaiter(id, name));
+  ipcMain.handle('waiters:toggle', (_e, id, active) => database.toggleWaiter(id, active));
+  ipcMain.handle('waiters:delete', (_e, id) => database.deleteWaiter(id));
+
+  // Drafts (open tabs)
+  ipcMain.handle('drafts:create', (_e, data) => database.createDraft(data));
+  ipcMain.handle('drafts:addItems', (_e, draftId, items) => database.addItemsToDraft(draftId, items));
+  ipcMain.handle('drafts:removeItem', (_e, itemId) => database.removeItemFromDraft(itemId));
+  ipcMain.handle('drafts:getById', (_e, id) => database.getDraftById(id));
+  ipcMain.handle('drafts:getOpen', () => database.getOpenDrafts());
+  ipcMain.handle('drafts:complete', (_e, draftId, paymentMethod) => database.completeDraft(draftId, paymentMethod));
+  ipcMain.handle('drafts:update', (_e, id, data) => database.updateDraft(id, data));
+  ipcMain.handle('drafts:delete', (_e, id) => database.deleteDraft(id));
+
   // Reports
   ipcMain.handle('reports:salesReport', (_e, start, end) => database.getSalesReport(start, end));
   ipcMain.handle('reports:monthlySummary', () => database.getMonthlySummary());

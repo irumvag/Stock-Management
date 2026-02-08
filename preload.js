@@ -21,6 +21,24 @@ contextBridge.exposeInMainWorld('api', {
   updateProduct: (product) => ipcRenderer.invoke('products:update', product),
   deleteProduct: (id) => ipcRenderer.invoke('products:delete', id),
 
+  // Waiters (name-only)
+  getWaiters: () => ipcRenderer.invoke('waiters:getAll'),
+  getActiveWaiters: () => ipcRenderer.invoke('waiters:getActive'),
+  createWaiter: (name) => ipcRenderer.invoke('waiters:create', name),
+  updateWaiter: (id, name) => ipcRenderer.invoke('waiters:update', id, name),
+  toggleWaiter: (id, active) => ipcRenderer.invoke('waiters:toggle', id, active),
+  deleteWaiter: (id) => ipcRenderer.invoke('waiters:delete', id),
+
+  // Drafts (open tabs)
+  createDraft: (data) => ipcRenderer.invoke('drafts:create', data),
+  addItemsToDraft: (draftId, items) => ipcRenderer.invoke('drafts:addItems', draftId, items),
+  removeItemFromDraft: (itemId) => ipcRenderer.invoke('drafts:removeItem', itemId),
+  getDraft: (id) => ipcRenderer.invoke('drafts:getById', id),
+  getOpenDrafts: () => ipcRenderer.invoke('drafts:getOpen'),
+  completeDraft: (draftId, paymentMethod) => ipcRenderer.invoke('drafts:complete', draftId, paymentMethod),
+  updateDraft: (id, data) => ipcRenderer.invoke('drafts:update', id, data),
+  deleteDraft: (id) => ipcRenderer.invoke('drafts:delete', id),
+
   // Sales
   createSale: (sale) => ipcRenderer.invoke('sales:create', sale),
   getSales: () => ipcRenderer.invoke('sales:getAll'),

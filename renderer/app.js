@@ -238,57 +238,92 @@ async function loadDashboard(container) {
 // POINT OF SALE
 // =====================================================
 
+let activeDraftId = null; // When adding to an existing draft
+
 async function loadPOS(container) {
   allProductsCache = await window.api.getProducts();
+  const waiters = await window.api.getActiveWaiters();
+  const openDrafts = await window.api.getOpenDrafts();
+
+  activeDraftId = null;
+
+  const waiterOptions = waiters.length === 0
+    ? '<option value="">-- No waiters added yet --</option>'
+    : `<option value="">-- Select Waiter --</option>${waiters.map((w) => `<option value="${escapeHtml(w.name)}">${escapeHtml(w.name)}</option>`).join('')}`;
 
   container.innerHTML = `
     <div class="view-header">
       <h1>Point of Sale</h1>
     </div>
-    <div class="pos-layout">
-      <!-- Left: Product Search & Results -->
-      <div class="pos-products">
-        <input type="text" id="pos-search" class="search-input pos-search-input" placeholder="Search products by name, category, or size..." autofocus>
-        <div id="pos-product-list" class="pos-product-list">
-          ${renderPOSProductGrid(allProductsCache)}
+    <div class="pos-tabs">
+      <button class="pos-tab active" data-pos-tab="order">New Order</button>
+      <button class="pos-tab" data-pos-tab="drafts">Open Tabs <span class="draft-count">${openDrafts.length}</span></button>
+    </div>
+    <div id="pos-order-panel">
+      <div class="pos-layout">
+        <div class="pos-products">
+          <input type="text" id="pos-search" class="search-input pos-search-input" placeholder="Search products by name, category, or size..." autofocus>
+          <div id="pos-product-list" class="pos-product-list">
+            ${renderPOSProductGrid(allProductsCache)}
+          </div>
+        </div>
+        <div class="pos-cart-panel">
+          <h2 class="pos-cart-title" id="pos-cart-title">Cart</h2>
+          <div id="pos-cart-items" class="pos-cart-items">
+            <div class="empty-state">Cart is empty</div>
+          </div>
+          <div class="pos-cart-total" id="pos-cart-total">
+            <span>Total:</span>
+            <strong>UGX 0</strong>
+          </div>
+          <div class="pos-checkout-form">
+            <div class="form-group">
+              <label for="pos-waiter">Waiter</label>
+              <select id="pos-waiter" class="select-input">${waiterOptions}</select>
+            </div>
+            <div class="form-group">
+              <label for="pos-table">Table</label>
+              <input type="text" id="pos-table" placeholder="e.g. Table 1, VIP, Bar">
+            </div>
+            <div class="form-group">
+              <label for="pos-customer">Customer (optional)</label>
+              <input type="text" id="pos-customer" placeholder="Customer name">
+            </div>
+            <div id="pos-error" class="error-message" hidden></div>
+            <button class="btn-primary pos-complete-btn" id="pos-save-draft-btn">Save to Tab</button>
+            <div class="pos-checkout-alt">
+              <div class="form-group">
+                <label for="pos-payment">Payment Method (direct sale)</label>
+                <select id="pos-payment" class="select-input">
+                  <option value="Cash">Cash</option>
+                  <option value="Card">Card</option>
+                  <option value="Mobile Money">Mobile Money</option>
+                </select>
+              </div>
+              <button class="btn-secondary pos-complete-btn" id="pos-complete-btn">Direct Sale & Print</button>
+            </div>
+          </div>
         </div>
       </div>
-
-      <!-- Right: Cart & Checkout -->
-      <div class="pos-cart-panel">
-        <h2 class="pos-cart-title">Cart</h2>
-        <div id="pos-cart-items" class="pos-cart-items">
-          <div class="empty-state">Cart is empty</div>
-        </div>
-        <div class="pos-cart-total" id="pos-cart-total">
-          <span>Total:</span>
-          <strong>UGX 0</strong>
-        </div>
-        <div class="pos-checkout-form">
-          <div class="form-group">
-            <label for="pos-waiter">Waiter</label>
-            <input type="text" id="pos-waiter" value="${escapeHtml(currentUser.username)}" readonly>
-          </div>
-          <div class="form-group">
-            <label for="pos-customer">Customer (optional)</label>
-            <input type="text" id="pos-customer" placeholder="Customer name">
-          </div>
-          <div class="form-group">
-            <label for="pos-payment">Payment Method</label>
-            <select id="pos-payment" class="select-input">
-              <option value="Cash">Cash</option>
-              <option value="Card">Card</option>
-              <option value="Mobile Money">Mobile Money</option>
-            </select>
-          </div>
-          <div id="pos-error" class="error-message" hidden></div>
-          <button class="btn-primary pos-complete-btn" id="pos-complete-btn">Complete Sale</button>
-        </div>
-      </div>
+    </div>
+    <div id="pos-drafts-panel" hidden>
+      <div id="drafts-list-container"></div>
     </div>`;
 
-  // Bind events
+  // Tab switching
+  container.querySelectorAll('.pos-tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      container.querySelector('.pos-tab.active').classList.remove('active');
+      tab.classList.add('active');
+      const isOrder = tab.dataset.posTab === 'order';
+      document.getElementById('pos-order-panel').hidden = !isOrder;
+      document.getElementById('pos-drafts-panel').hidden = isOrder;
+      if (!isOrder) renderDraftsList();
+    });
+  });
+
   document.getElementById('pos-search').addEventListener('input', debounce(posSearchProducts, 200));
+  document.getElementById('pos-save-draft-btn').addEventListener('click', saveToDraft);
   document.getElementById('pos-complete-btn').addEventListener('click', completeSale);
   bindPOSProductEvents();
 }
@@ -438,7 +473,76 @@ function renderCart() {
   };
 }
 
-// --- Complete Sale ---
+// --- Save to Draft (Tab) ---
+
+async function saveToDraft() {
+  const posError = document.getElementById('pos-error');
+  posError.hidden = true;
+
+  if (cart.length === 0) {
+    posError.textContent = 'Add items to the cart first.';
+    posError.hidden = false;
+    return;
+  }
+
+  const waiter = document.getElementById('pos-waiter').value;
+  if (!waiter) {
+    posError.textContent = 'Please select a waiter.';
+    posError.hidden = false;
+    return;
+  }
+
+  const table = document.getElementById('pos-table').value.trim();
+  if (!table) {
+    posError.textContent = 'Please enter a table number.';
+    posError.hidden = false;
+    return;
+  }
+
+  const customer = document.getElementById('pos-customer').value.trim();
+
+  const items = cart.map((item) => ({
+    product_id: item.product_id,
+    product_name: item.product_name,
+    size_unit: item.size_unit,
+    unit_price: item.unit_price,
+    quantity: item.quantity,
+    subtotal: item.subtotal,
+  }));
+
+  try {
+    if (activeDraftId) {
+      // Adding more items to existing draft
+      const result = await window.api.addItemsToDraft(activeDraftId, items);
+      if (!result.success) {
+        posError.textContent = result.error;
+        posError.hidden = false;
+        return;
+      }
+    } else {
+      // Create new draft then add items
+      const draft = await window.api.createDraft({ waiter_name: waiter, table_number: table, customer_name: customer });
+      const result = await window.api.addItemsToDraft(draft.id, items);
+      if (!result.success) {
+        posError.textContent = result.error;
+        posError.hidden = false;
+        return;
+      }
+    }
+    cart = [];
+    activeDraftId = null;
+    allProductsCache = await window.api.getProducts();
+    await loadPOS(document.getElementById('content'));
+    // Switch to drafts tab
+    const draftsTab = document.querySelector('[data-pos-tab="drafts"]');
+    if (draftsTab) draftsTab.click();
+  } catch (err) {
+    posError.textContent = err.message || 'Failed to save draft.';
+    posError.hidden = false;
+  }
+}
+
+// --- Direct Sale (immediate payment) ---
 
 async function completeSale() {
   const posError = document.getElementById('pos-error');
@@ -450,9 +554,9 @@ async function completeSale() {
     return;
   }
 
-  const waiter = document.getElementById('pos-waiter').value.trim();
+  const waiter = document.getElementById('pos-waiter').value;
   if (!waiter) {
-    posError.textContent = 'Please enter the waiter name.';
+    posError.textContent = 'Please select a waiter.';
     posError.hidden = false;
     return;
   }
@@ -478,13 +582,145 @@ async function completeSale() {
   try {
     const sale = await window.api.createSale(saleData);
     cart = [];
-    allProductsCache = await window.api.getProducts(); // refresh stock
+    activeDraftId = null;
+    allProductsCache = await window.api.getProducts();
     showReceipt(sale);
-    await loadPOS(document.getElementById('content')); // re-render POS with updated stock
+    await loadPOS(document.getElementById('content'));
   } catch (err) {
     posError.textContent = err.message || 'Failed to complete sale.';
     posError.hidden = false;
   }
+}
+
+// --- Drafts List ---
+
+async function renderDraftsList() {
+  const drafts = await window.api.getOpenDrafts();
+  const container = document.getElementById('drafts-list-container');
+  const countBadge = document.querySelector('.draft-count');
+  if (countBadge) countBadge.textContent = drafts.length;
+
+  if (drafts.length === 0) {
+    container.innerHTML = '<div class="empty-state" style="padding:40px 0;">No open tabs. Create one from "New Order" tab.</div>';
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="drafts-grid">
+      ${drafts.map((d) => {
+        const itemCount = d.items.reduce((s, i) => s + i.quantity, 0);
+        const timeAgo = getTimeAgo(d.updated_at);
+        return `
+        <div class="draft-card" data-draft-id="${d.id}">
+          <div class="draft-card-header">
+            <div class="draft-table-badge">${escapeHtml(d.table_number)}</div>
+            <span class="draft-time">${timeAgo}</span>
+          </div>
+          <div class="draft-card-info">
+            <div class="draft-waiter">Waiter: <strong>${escapeHtml(d.waiter_name)}</strong></div>
+            ${d.customer_name ? `<div class="draft-customer">Customer: ${escapeHtml(d.customer_name)}</div>` : ''}
+            <div class="draft-summary">${itemCount} item${itemCount !== 1 ? 's' : ''} &middot; ${fmtCurrency(d.total_amount)}</div>
+          </div>
+          <div class="draft-card-items">
+            ${d.items.map((item) => `
+              <div class="draft-item-row">
+                <span>${item.quantity}x ${escapeHtml(item.product_name)} <small>${escapeHtml(item.size_unit)}</small></span>
+                <span>${fmtNum(item.subtotal)}</span>
+              </div>`).join('')}
+          </div>
+          <div class="draft-card-actions">
+            <button class="btn-primary btn-sm" data-draft-add="${d.id}">+ Add Items</button>
+            <button class="btn-sm" style="background:#16a34a;color:#fff;" data-draft-complete="${d.id}">Complete & Print</button>
+            <button class="btn-secondary btn-sm" data-draft-delete="${d.id}">Cancel Tab</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+
+  // Bind draft actions
+  container.querySelectorAll('[data-draft-add]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const draftId = Number(btn.dataset.draftAdd);
+      const draft = await window.api.getDraft(draftId);
+      if (!draft) return;
+      activeDraftId = draftId;
+      // Switch to order tab with draft context
+      const orderTab = document.querySelector('[data-pos-tab="order"]');
+      if (orderTab) orderTab.click();
+      // Pre-fill waiter and table
+      const waiterSelect = document.getElementById('pos-waiter');
+      const tableInput = document.getElementById('pos-table');
+      const customerInput = document.getElementById('pos-customer');
+      const cartTitle = document.getElementById('pos-cart-title');
+      if (waiterSelect) { waiterSelect.value = draft.waiter_name; waiterSelect.disabled = true; }
+      if (tableInput) { tableInput.value = draft.table_number; tableInput.readOnly = true; }
+      if (customerInput) customerInput.value = draft.customer_name || '';
+      if (cartTitle) cartTitle.textContent = `Adding to: ${draft.table_number}`;
+    });
+  });
+
+  container.querySelectorAll('[data-draft-complete]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const draftId = Number(btn.dataset.draftComplete);
+      showCompleteDraftModal(draftId);
+    });
+  });
+
+  container.querySelectorAll('[data-draft-delete]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const draftId = Number(btn.dataset.draftDelete);
+      if (!confirm('Cancel this tab? All items will be returned to stock.')) return;
+      await window.api.deleteDraft(draftId);
+      allProductsCache = await window.api.getProducts();
+      renderDraftsList();
+    });
+  });
+}
+
+function showCompleteDraftModal(draftId) {
+  // Create inline completion form
+  const card = document.querySelector(`[data-draft-id="${draftId}"]`);
+  if (!card) return;
+
+  const existingForm = card.querySelector('.draft-complete-form');
+  if (existingForm) { existingForm.remove(); return; }
+
+  const formHtml = `
+    <div class="draft-complete-form">
+      <div class="form-group">
+        <label>Payment Method</label>
+        <select class="select-input" id="draft-payment-${draftId}">
+          <option value="Cash">Cash</option>
+          <option value="Card">Card</option>
+          <option value="Mobile Money">Mobile Money</option>
+        </select>
+      </div>
+      <button class="btn-primary btn-sm" id="draft-confirm-${draftId}">Confirm & Print Receipt</button>
+    </div>`;
+
+  card.insertAdjacentHTML('beforeend', formHtml);
+
+  document.getElementById(`draft-confirm-${draftId}`).addEventListener('click', async () => {
+    const payment = document.getElementById(`draft-payment-${draftId}`).value;
+    const result = await window.api.completeDraft(draftId, payment);
+    if (result.success) {
+      showReceipt(result.sale);
+      allProductsCache = await window.api.getProducts();
+      renderDraftsList();
+    } else {
+      alert(result.error || 'Failed to complete tab.');
+    }
+  });
+}
+
+function getTimeAgo(dateStr) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
 }
 
 // =====================================================
@@ -1478,13 +1714,14 @@ document.getElementById('delete-confirm-btn').addEventListener('click', async ()
 let userDeleteTargetId = null;
 
 async function loadUsers(container) {
-  const users = await window.api.getUsers();
+  const [users, waiters] = await Promise.all([window.api.getUsers(), window.api.getWaiters()]);
 
   container.innerHTML = `
     <div class="view-header">
-      <h1>User Management</h1>
-      <button class="btn-primary btn-sm" id="add-user-btn">+ Add User</button>
+      <h1>System Users</h1>
+      <button class="btn-primary btn-sm" id="add-user-btn">+ Add Login User</button>
     </div>
+    <p style="color:#64748b;font-size:13px;margin-bottom:12px;">Login accounts for Manager access to the system.</p>
     <table>
       <thead>
         <tr><th>Username</th><th>Role</th><th>Created</th><th>Actions</th></tr>
@@ -1575,6 +1812,49 @@ async function loadUsers(container) {
         <div class="form-actions">
           <button class="btn-secondary" id="user-delete-cancel">Cancel</button>
           <button class="btn-danger" id="user-delete-confirm">Delete User</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== WAITER NAMES SECTION ====== -->
+    <div style="margin-top:40px;border-top:2px solid #e2e8f0;padding-top:24px;">
+      <div class="view-header">
+        <h1>Waiter Names</h1>
+        <button class="btn-primary btn-sm" id="add-waiter-btn">+ Add Waiter</button>
+      </div>
+      <p style="color:#64748b;font-size:13px;margin-bottom:12px;">Waiters are staff names shown in the POS dropdown. No login/password needed.</p>
+      ${waiters.length === 0 ? '<div class="empty-state">No waiters added yet. Add waiter names to use them in POS.</div>' : `
+      <table>
+        <thead><tr><th>Name</th><th>Status</th><th>Added</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${waiters.map((w) => `
+            <tr>
+              <td><strong>${escapeHtml(w.name)}</strong></td>
+              <td><span class="role-badge ${w.active ? 'role-waiter' : 'role-inactive'}">${w.active ? 'Active' : 'Inactive'}</span></td>
+              <td>${new Date(w.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+              <td class="actions-cell">
+                <button class="btn-icon btn-edit" data-waiter-edit="${w.id}" data-waiter-name="${escapeHtml(w.name)}" title="Rename">&#9998;</button>
+                <button class="btn-icon" data-waiter-toggle="${w.id}" data-waiter-active="${w.active}" title="${w.active ? 'Deactivate' : 'Activate'}">${w.active ? '&#9940;' : '&#9989;'}</button>
+                <button class="btn-icon btn-delete" data-waiter-del="${w.id}" data-waiter-name="${escapeHtml(w.name)}" title="Delete">&#128465;</button>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`}
+      <div id="waiter-form-section" hidden>
+        <div style="background:#fff;border-radius:10px;padding:24px;margin-top:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+          <h3 id="waiter-form-title" style="margin-bottom:16px;">Add Waiter</h3>
+          <form id="waiter-form">
+            <input type="hidden" id="wf-id">
+            <div class="form-group">
+              <label for="wf-name">Waiter Name</label>
+              <input type="text" id="wf-name" required placeholder="Enter waiter name" minlength="2">
+            </div>
+            <div id="waiter-form-error" class="error-message" hidden></div>
+            <div class="form-actions">
+              <button type="button" class="btn-secondary" id="waiter-form-cancel">Cancel</button>
+              <button type="submit" class="btn-primary" id="waiter-form-submit">Add Waiter</button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
@@ -1723,6 +2003,83 @@ async function loadUsers(container) {
   // --- Reset password cancel ---
   document.getElementById('reset-pw-cancel').addEventListener('click', () => {
     document.getElementById('reset-pw-section').hidden = true;
+  });
+
+  // ====== WAITER NAME MANAGEMENT ======
+
+  // Add waiter button
+  document.getElementById('add-waiter-btn').addEventListener('click', () => {
+    document.getElementById('waiter-form-section').hidden = false;
+    document.getElementById('waiter-form-error').hidden = true;
+    document.getElementById('wf-id').value = '';
+    document.getElementById('wf-name').value = '';
+    document.getElementById('waiter-form-title').textContent = 'Add Waiter';
+    document.getElementById('waiter-form-submit').textContent = 'Add Waiter';
+    document.getElementById('wf-name').focus();
+  });
+
+  // Edit waiter buttons
+  container.querySelectorAll('[data-waiter-edit]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.getElementById('waiter-form-section').hidden = false;
+      document.getElementById('waiter-form-error').hidden = true;
+      document.getElementById('wf-id').value = btn.dataset.waiterEdit;
+      document.getElementById('wf-name').value = btn.dataset.waiterName;
+      document.getElementById('waiter-form-title').textContent = 'Rename Waiter';
+      document.getElementById('waiter-form-submit').textContent = 'Save';
+      document.getElementById('wf-name').focus();
+    });
+  });
+
+  // Toggle active/inactive
+  container.querySelectorAll('[data-waiter-toggle]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = Number(btn.dataset.waiterToggle);
+      const isActive = btn.dataset.waiterActive === '1';
+      await window.api.toggleWaiter(id, !isActive);
+      loadUsers(container);
+    });
+  });
+
+  // Delete waiter
+  container.querySelectorAll('[data-waiter-del]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const name = btn.dataset.waiterName;
+      if (!confirm(`Delete waiter "${name}"?`)) return;
+      await window.api.deleteWaiter(Number(btn.dataset.waiterDel));
+      loadUsers(container);
+    });
+  });
+
+  // Waiter form submit
+  document.getElementById('waiter-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById('waiter-form-error');
+    errEl.hidden = true;
+    const id = document.getElementById('wf-id').value;
+    const name = document.getElementById('wf-name').value.trim();
+    if (name.length < 2) {
+      errEl.textContent = 'Name must be at least 2 characters.';
+      errEl.hidden = false;
+      return;
+    }
+    let result;
+    if (id) {
+      result = await window.api.updateWaiter(Number(id), name);
+    } else {
+      result = await window.api.createWaiter(name);
+    }
+    if (!result.success) {
+      errEl.textContent = result.error;
+      errEl.hidden = false;
+      return;
+    }
+    loadUsers(container);
+  });
+
+  // Waiter form cancel
+  document.getElementById('waiter-form-cancel').addEventListener('click', () => {
+    document.getElementById('waiter-form-section').hidden = true;
   });
 }
 
