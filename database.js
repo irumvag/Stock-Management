@@ -17,6 +17,7 @@ function initialize() {
   db.pragma('foreign_keys = ON');
   createTables();
   seedDefaultAdmin();
+  seedSampleProducts();
   return db;
 }
 
@@ -70,6 +71,88 @@ function seedDefaultAdmin() {
       'INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)'
     ).run('admin', hash, 'Manager');
   }
+}
+
+function seedSampleProducts() {
+  const count = db.prepare('SELECT COUNT(*) AS cnt FROM products').get().cnt;
+  if (count > 0) return; // Only seed if the table is empty
+
+  const insert = db.prepare(
+    'INSERT INTO products (name, category, size_unit, buying_price, selling_price, current_stock, min_stock_alert) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  );
+
+  const products = [
+    // ── Beers ──
+    ['Nile Special',     'Beers', 'Bottle', 3600,  5000,  91, 10],
+    ['Club',             'Beers', 'Bottle', 3200,  4000,  80, 10],
+    ['Castle Lite',      'Beers', 'Bottle', 3375,  4000,  42, 10],
+    ['Bell Lager',       'Beers', 'Bottle', 2800,  4000,  37, 10],
+    ['Pilsner',          'Beers', 'Bottle', 2600,  4000,  32, 10],
+    ['Tusker Lager',     'Beers', 'Bottle', 3750,  4000,  44, 10],
+    ['Tusker Malt',      'Beers', 'Bottle', 3000,  4000,  48, 10],
+    ['Tusker Lite',      'Beers', 'Bottle', 3000,  4000,  28, 10],
+    ['Guinness',         'Beers', 'Bottle', 2900,  4000, 103, 10],
+    ['Smooth',           'Beers', 'Bottle', 2900,  4000,  41, 10],
+    ['Smirnoff Ice',     'Beers', 'Bottle', 3400,  5000,  60, 10],
+    ['Tusker Cider',     'Beers', 'Bottle', 3800,  6000,  55, 10],
+    ['Bell Citrus',      'Beers', 'Bottle', 2800,  4000,  15, 10],
+    ['Heineken',         'Beers', 'Bottle', 7000, 10000,  21, 10],
+    ['Hunters',          'Beers', 'Bottle', 5000, 10000,  13, 10],
+
+    // ── Soft Drinks ──
+    ['Soda Coca-Cola',   'Soft Drinks', 'Bottle',  813,  2000, 105, 20],
+    ['Soda Pepsi',       'Soft Drinks', 'Bottle',  813,  2000,  72, 20],
+    ['Minute Maid',      'Soft Drinks', 'Bottle', 2083,  3000,  19, 10],
+    ['Oner',             'Soft Drinks', 'Bottle', 2000,  3000,  16, 10],
+    ['Sting',            'Soft Drinks', 'Bottle', 2000,  3000,  17, 10],
+    ['Predator',         'Soft Drinks', 'Bottle', 1500,  3000,  21, 10],
+    ['H2O Big',          'Soft Drinks', 'Bottle', 1541,  3000,  17, 10],
+    ['H2O Small',        'Soft Drinks', 'Bottle',  833,  2500,  42, 15],
+    ['H2O Uzima',        'Soft Drinks', 'Bottle',  413,  1000,  73, 20],
+    ['Rock Boom',        'Soft Drinks', 'Bottle', 1900,  3000,  17, 10],
+
+    // ── Spirits (75cl Bottles) ──
+    ['Uganda Waragi Premium',  'Spirits', '75cl',  50000, 100000, 2, 2],
+    ['Uganda Waragi Coconut',  'Spirits', '75cl',  50000, 100000, 2, 2],
+    ['Uganda Waragi Lemon',    'Spirits', '75cl',  50000, 100000, 2, 2],
+    ['V&A',                    'Spirits', '75cl',  50000, 100000, 2, 2],
+    ['Bond 7',                 'Spirits', '75cl',  50000, 100000, 2, 2],
+    ['Vat 69',                 'Spirits', '75cl',  70000, 140000, 1, 2],
+    ['Black & White',          'Spirits', '75cl', 120000, 240000, 2, 1],
+    ['Smirnoff Vodka',         'Spirits', '75cl',  60000, 120000, 2, 2],
+    ['Gilbeys',                'Spirits', '75cl',  60000, 120000, 1, 2],
+    ['4 Cousins Wine',         'Spirits', '75cl',  55000, 110000, 3, 2],
+    ['Captain Morgan',         'Spirits', '75cl',  50000, 100000, 3, 2],
+    ['Richot Label',           'Spirits', '75cl', 130000, 250000, 1, 1],
+    ['Amarula',                'Spirits', '75cl', 190000, 350000, 1, 1],
+
+    // ── Spirits (Half 375ml) ──
+    ['Uganda Waragi Premium',  'Spirits', '1/2 (375ml)', 25000, 50000, 7, 3],
+    ['Uganda Waragi Coconut',  'Spirits', '1/2 (375ml)', 25000, 50000, 8, 3],
+
+    // ── Spirits (Quarter 250ml) ──
+    ['Uganda Waragi Premium',  'Spirits', '1/4 (250ml)', 18000, 35000, 2, 3],
+    ['Bond 7',                 'Spirits', '1/4 (250ml)', 12500, 25000, 3, 3],
+    ['Vat 69',                 'Spirits', '1/4 (250ml)', 19000, 38000, 4, 3],
+    ['Black & White',          'Spirits', '1/4 (250ml)', 45000, 90000, 1, 2],
+    ['Gilbeys',                'Spirits', '1/4 (250ml)', 25000, 50000, 2, 3],
+    ['Captain Morgan',         'Spirits', '1/4 (250ml)', 19000, 38000, 4, 3],
+
+    // ── Spirits (Other Sizes) ──
+    ['Smirnoff Guarana',       'Spirits', '200ml',  10000,  20000, 21, 5],
+    ['4 Cousins Rose',         'Wines',   '1.5lts', 100000, 200000, 2, 1],
+    ['4 Cousins Radler',       'Wines',   '1.5lts', 100000, 200000, 1, 1],
+    ['Toppo Red',              'Wines',   '75cl',   150000, 300000, 1, 1],
+    ['Frosty',                 'Wines',   '5lts',   100000, 200000, 1, 1],
+    ['4 Cousins',              'Wines',   '5lts',    10000,  20000, 1, 1],
+  ];
+
+  const insertMany = db.transaction(() => {
+    for (const p of products) {
+      insert.run(...p);
+    }
+  });
+  insertMany();
 }
 
 function authenticate(username, password) {

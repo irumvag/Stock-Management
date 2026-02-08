@@ -421,10 +421,10 @@ async function completeSale() {
 // RECEIPT
 // =====================================================
 
-const HOTEL_NAME = 'Grand Hotel';
+const HOTEL_NAME = 'CLUB TMP';
 const HOTEL_TAGLINE = 'Bar & Restaurant';
-const HOTEL_ADDRESS = 'Kigali, Rwanda';
-const HOTEL_PHONE = '+250 788 000 000';
+const HOTEL_ADDRESS = 'Bukerere Road, Joggo-Sonde';
+const HOTEL_PHONE = '0760-011106';
 
 let lastSaleReceipt = null;
 
