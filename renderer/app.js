@@ -209,7 +209,7 @@ async function loadDashboard(container) {
         <div class="stat-label">Categories</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        <div class="stat-value">${fmtCurrency(totalValue)}</div>
         <div class="stat-label">Stock Value (Selling)</div>
       </div>
       <div class="stat-card ${lowStock.length > 0 ? 'stat-warning' : ''}">
@@ -262,7 +262,7 @@ async function loadPOS(container) {
         </div>
         <div class="pos-cart-total" id="pos-cart-total">
           <span>Total:</span>
-          <strong>0.00</strong>
+          <strong>UGX 0</strong>
         </div>
         <div class="pos-checkout-form">
           <div class="form-group">
@@ -305,7 +305,7 @@ function renderPOSProductGrid(products) {
       <div class="pos-product-card ${outOfStock ? 'out-of-stock' : ''}" data-id="${p.id}">
         <div class="pos-card-name">${escapeHtml(p.name)}</div>
         <div class="pos-card-detail">${escapeHtml(p.category)} &middot; ${escapeHtml(p.size_unit)}</div>
-        <div class="pos-card-price">${p.selling_price.toFixed(2)}</div>
+        <div class="pos-card-price">${fmtCurrency(p.selling_price)}</div>
         <div class="pos-card-stock ${p.current_stock <= p.min_stock_alert ? 'stock-low' : ''}">
           ${outOfStock ? 'Out of stock' : p.current_stock + ' in stock'}
         </div>
@@ -399,7 +399,7 @@ function renderCart() {
 
   if (cart.length === 0) {
     container.innerHTML = '<div class="empty-state">Cart is empty</div>';
-    totalEl.innerHTML = '<span>Total:</span><strong>0.00</strong>';
+    totalEl.innerHTML = '<span>Total:</span><strong>UGX 0</strong>';
     return;
   }
 
@@ -407,7 +407,7 @@ function renderCart() {
     <div class="cart-item" data-id="${item.product_id}">
       <div class="cart-item-info">
         <div class="cart-item-name">${escapeHtml(item.product_name)}</div>
-        <div class="cart-item-detail">${escapeHtml(item.size_unit)} &middot; ${item.unit_price.toFixed(2)} each</div>
+        <div class="cart-item-detail">${escapeHtml(item.size_unit)} &middot; ${fmtCurrency(item.unit_price)} each</div>
       </div>
       <div class="cart-item-controls">
         <button class="btn-cart-qty" data-action="minus" data-id="${item.product_id}">-</button>
@@ -415,11 +415,11 @@ function renderCart() {
         <button class="btn-cart-qty" data-action="plus" data-id="${item.product_id}">+</button>
         <button class="btn-cart-remove" data-id="${item.product_id}" title="Remove">&times;</button>
       </div>
-      <div class="cart-item-subtotal">${item.subtotal.toFixed(2)}</div>
+      <div class="cart-item-subtotal">${fmtNum(item.subtotal)}</div>
     </div>`).join('');
 
   const total = getCartTotal();
-  totalEl.innerHTML = `<span>Total:</span><strong>${total.toFixed(2)}</strong>`;
+  totalEl.innerHTML = `<span>Total:</span><strong>${fmtCurrency(total)}</strong>`;
 
   // Bind cart events via delegation
   container.onclick = (e) => {
@@ -545,15 +545,15 @@ function showReceipt(sale) {
               <td>${escapeHtml(item.product_name)}</td>
               <td>${escapeHtml(item.size_unit || '')}</td>
               <td>${item.quantity}</td>
-              <td>${item.unit_price.toFixed(2)}</td>
-              <td>${item.subtotal.toFixed(2)}</td>
+              <td>${fmtNum(item.unit_price)}</td>
+              <td>${fmtNum(item.subtotal)}</td>
             </tr>`).join('')}
         </tbody>
       </table>
       <div class="receipt-divider"></div>
       <div class="receipt-summary">
         <div class="receipt-summary-row"><span>Items:</span><span>${itemCount}</span></div>
-        <div class="receipt-summary-row receipt-grand-total"><span>TOTAL:</span><span>${sale.total_amount.toFixed(2)}</span></div>
+        <div class="receipt-summary-row receipt-grand-total"><span>TOTAL:</span><span>UGX ${fmtNum(sale.total_amount)}</span></div>
       </div>
       <div class="receipt-divider"></div>
       <div class="receipt-footer">
@@ -578,6 +578,7 @@ function buildReceiptPrintHtml(sale) {
   .hotel-name { text-align: center; font-size: 18px; font-weight: bold; margin-bottom: 1px; }
   .tagline { text-align: center; font-size: 11px; margin-bottom: 1px; }
   .contact { text-align: center; font-size: 10px; color: #444; margin-bottom: 2px; }
+  .currency-label { text-align: center; font-size: 10px; color: #666; margin-bottom: 4px; }
   .divider { border-top: 1px dashed #000; margin: 8px 0; }
   .receipt-no { text-align: center; font-weight: bold; font-size: 13px; margin-bottom: 6px; }
   .meta-row { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 1px; }
@@ -596,6 +597,7 @@ function buildReceiptPrintHtml(sale) {
   <div class="hotel-name">${HOTEL_NAME}</div>
   <div class="tagline">${HOTEL_TAGLINE}</div>
   <div class="contact">${HOTEL_ADDRESS} | ${HOTEL_PHONE}</div>
+  <div class="currency-label">All prices in UGX</div>
   <div class="divider"></div>
   <div class="receipt-no">Receipt #${padReceiptNo(sale.id)}</div>
   <div class="meta-row"><span>Date:</span><span>${date}</span></div>
@@ -611,14 +613,14 @@ function buildReceiptPrintHtml(sale) {
         <td>${i.product_name}</td>
         <td>${i.size_unit || ''}</td>
         <td>${i.quantity}</td>
-        <td>${i.unit_price.toFixed(2)}</td>
-        <td>${i.subtotal.toFixed(2)}</td>
+        <td>${Math.round(i.unit_price).toLocaleString()}</td>
+        <td>${Math.round(i.subtotal).toLocaleString()}</td>
       </tr>`).join('')}
     </tbody>
   </table>
   <div class="divider"></div>
   <div class="summary-row"><span>Items:</span><span>${itemCount}</span></div>
-  <div class="summary-row grand-total"><span>TOTAL:</span><span>${sale.total_amount.toFixed(2)}</span></div>
+  <div class="summary-row grand-total"><span>TOTAL:</span><span>UGX ${Math.round(sale.total_amount).toLocaleString()}</span></div>
   <div class="divider"></div>
   <div class="footer">
     <div class="footer-thanks">Thank you for visiting ${HOTEL_NAME}!</div>
@@ -672,7 +674,7 @@ async function loadSalesHistory(container) {
               <td>${escapeHtml(s.customer_name || '-')}</td>
               <td>${s.products.length} item${s.products.length !== 1 ? 's' : ''}</td>
               <td>${escapeHtml(s.payment_method)}</td>
-              <td><strong>${s.total_amount.toFixed(2)}</strong></td>
+              <td><strong>${fmtCurrency(s.total_amount)}</strong></td>
               <td class="actions-cell">
                 <button class="btn-sm btn-secondary" data-sale-view="${s.id}" title="View details">View</button>
                 <button class="btn-sm btn-primary" data-sale-reprint="${s.id}" title="Reprint receipt">Reprint</button>
@@ -732,20 +734,20 @@ function showSaleDetail(sale) {
             <tr>
               <td>${escapeHtml(item.product_name)}</td>
               <td>${escapeHtml(item.size_unit || '')}</td>
-              <td>${item.unit_price.toFixed(2)}</td>
+              <td>${fmtNum(item.unit_price)}</td>
               <td>${item.quantity}</td>
-              <td>${item.subtotal.toFixed(2)}</td>
+              <td>${fmtNum(item.subtotal)}</td>
             </tr>`).join('')}
         </tbody>
       </table>
       <div class="sale-detail-summary">
         <div class="sale-detail-summary-row"><span>Items:</span><span>${itemCount}</span></div>
-        <div class="sale-detail-summary-row"><span>Revenue:</span><span>${sale.total_amount.toFixed(2)}</span></div>
+        <div class="sale-detail-summary-row"><span>Revenue:</span><span>${fmtCurrency(sale.total_amount)}</span></div>
         ${isManager() ? `
-          <div class="sale-detail-summary-row"><span>Cost:</span><span>${totalCost.toFixed(2)}</span></div>
-          <div class="sale-detail-summary-row sale-detail-profit"><span>Profit:</span><span class="${profit >= 0 ? 'profit-positive' : 'profit-negative'}">${profit.toFixed(2)}</span></div>
+          <div class="sale-detail-summary-row"><span>Cost:</span><span>${fmtCurrency(totalCost)}</span></div>
+          <div class="sale-detail-summary-row sale-detail-profit"><span>Profit:</span><span class="${profit >= 0 ? 'profit-positive' : 'profit-negative'}">${fmtCurrency(profit)}</span></div>
         ` : ''}
-        <div class="sale-detail-summary-row sale-detail-total"><span>TOTAL:</span><span>${sale.total_amount.toFixed(2)}</span></div>
+        <div class="sale-detail-summary-row sale-detail-total"><span>TOTAL:</span><span>${fmtCurrency(sale.total_amount)}</span></div>
       </div>
       <div class="sale-detail-actions">
         <button class="btn-primary btn-sm" id="sale-detail-reprint">Reprint Receipt</button>
@@ -879,8 +881,8 @@ async function generateWaiterReport() {
       <div class="stat-card"><div class="stat-value">${report.waiters.length}</div><div class="stat-label">Waiters Active</div></div>
       <div class="stat-card"><div class="stat-value">${report.grandTotalSales}</div><div class="stat-label">Total Transactions</div></div>
       <div class="stat-card"><div class="stat-value">${report.grandTotalItems}</div><div class="stat-label">Items Sold</div></div>
-      <div class="stat-card"><div class="stat-value">${fmtNum(report.grandTotalRevenue)}</div><div class="stat-label">Total Revenue</div></div>
-      <div class="stat-card"><div class="stat-value profit-positive">${fmtNum(report.grandTotalProfit)}</div><div class="stat-label">Total Profit</div></div>
+      <div class="stat-card"><div class="stat-value">${fmtCurrency(report.grandTotalRevenue)}</div><div class="stat-label">Total Revenue</div></div>
+      <div class="stat-card"><div class="stat-value profit-positive">${fmtCurrency(report.grandTotalProfit)}</div><div class="stat-label">Total Profit</div></div>
     </div>
 
     <h3 style="margin-bottom:10px;">Performance by Waiter</h3>
@@ -917,7 +919,7 @@ async function generateWaiterReport() {
                 <td>${escapeHtml(s.customer_name || 'Walk-in')}</td>
                 <td>${escapeHtml(s.payment_method)}</td>
                 <td>${itemCount}</td>
-                <td><strong>${s.total_amount.toFixed(2)}</strong></td>
+                <td><strong>${fmtCurrency(s.total_amount)}</strong></td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -977,8 +979,8 @@ async function loadMonthlyReport(container) {
       <h2>Monthly Summary</h2>
       <div class="stats-grid" style="margin-bottom:20px;">
         <div class="stat-card"><div class="stat-value">${months.length}</div><div class="stat-label">Months with Sales</div></div>
-        <div class="stat-card"><div class="stat-value">${fmtNum(totalRev)}</div><div class="stat-label">All-Time Revenue</div></div>
-        <div class="stat-card"><div class="stat-value profit-positive">${fmtNum(totalProf)}</div><div class="stat-label">All-Time Profit</div></div>
+        <div class="stat-card"><div class="stat-value">${fmtCurrency(totalRev)}</div><div class="stat-label">All-Time Revenue</div></div>
+        <div class="stat-card"><div class="stat-value profit-positive">${fmtCurrency(totalProf)}</div><div class="stat-label">All-Time Profit</div></div>
       </div>
       ${months.length === 0 ? '<div class="empty-state">No sales data yet.</div>' : `
       <!-- Bar chart -->
@@ -1093,9 +1095,9 @@ async function loadInventoryValueReport(container) {
       <div class="stats-grid" style="margin-bottom:20px;">
         <div class="stat-card"><div class="stat-value">${report.totalProducts}</div><div class="stat-label">Products</div></div>
         <div class="stat-card"><div class="stat-value">${report.totalStock}</div><div class="stat-label">Total Units in Stock</div></div>
-        <div class="stat-card"><div class="stat-value">${fmtNum(report.totalBuyingValue)}</div><div class="stat-label">Total Cost Value</div></div>
-        <div class="stat-card"><div class="stat-value">${fmtNum(report.totalSellingValue)}</div><div class="stat-label">Total Selling Value</div></div>
-        <div class="stat-card"><div class="stat-value profit-positive">${fmtNum(report.potentialProfit)}</div><div class="stat-label">Potential Profit</div></div>
+        <div class="stat-card"><div class="stat-value">${fmtCurrency(report.totalBuyingValue)}</div><div class="stat-label">Total Cost Value</div></div>
+        <div class="stat-card"><div class="stat-value">${fmtCurrency(report.totalSellingValue)}</div><div class="stat-label">Total Selling Value</div></div>
+        <div class="stat-card"><div class="stat-value profit-positive">${fmtCurrency(report.potentialProfit)}</div><div class="stat-label">Potential Profit</div></div>
       </div>
 
       <h3 style="margin-bottom:10px;">By Category</h3>
@@ -1124,8 +1126,8 @@ async function loadInventoryValueReport(container) {
               <td>${escapeHtml(p.category)}</td>
               <td>${escapeHtml(p.size_unit)}</td>
               <td>${p.current_stock}</td>
-              <td>${p.buying_price.toFixed(2)}</td>
-              <td>${p.selling_price.toFixed(2)}</td>
+              <td>${fmtNum(p.buying_price)}</td>
+              <td>${fmtNum(p.selling_price)}</td>
               <td>${fmtNum(p.stock_selling_value)}</td>
               <td class="profit-positive">${fmtNum(p.potential_profit)}</td>
             </tr>`).join('')}
@@ -1141,9 +1143,9 @@ function renderSalesReportCards(report) {
     <div class="stats-grid" style="margin-bottom:20px;">
       <div class="stat-card"><div class="stat-value">${report.totalSales}</div><div class="stat-label">Total Sales</div></div>
       <div class="stat-card"><div class="stat-value">${report.totalItems}</div><div class="stat-label">Items Sold</div></div>
-      <div class="stat-card"><div class="stat-value">${fmtNum(report.totalRevenue)}</div><div class="stat-label">Revenue</div></div>
-      <div class="stat-card"><div class="stat-value">${fmtNum(report.totalCost)}</div><div class="stat-label">Cost</div></div>
-      <div class="stat-card"><div class="stat-value profit-positive">${fmtNum(report.totalProfit)}</div><div class="stat-label">Profit</div></div>
+      <div class="stat-card"><div class="stat-value">${fmtCurrency(report.totalRevenue)}</div><div class="stat-label">Revenue</div></div>
+      <div class="stat-card"><div class="stat-value">${fmtCurrency(report.totalCost)}</div><div class="stat-label">Cost</div></div>
+      <div class="stat-card"><div class="stat-value profit-positive">${fmtCurrency(report.totalProfit)}</div><div class="stat-label">Profit</div></div>
       <div class="stat-card"><div class="stat-value">${report.profitMargin.toFixed(1)}%</div><div class="stat-label">Profit Margin</div></div>
     </div>`;
 }
@@ -1155,7 +1157,7 @@ function renderPaymentBreakdown(breakdown) {
     <h3 style="margin-bottom:10px;">Payment Methods</h3>
     <div class="payment-breakdown">
       ${entries.map(([method, amount]) =>
-        `<div class="payment-card"><div class="payment-method">${escapeHtml(method)}</div><div class="payment-amount">${fmtNum(amount)}</div></div>`
+        `<div class="payment-card"><div class="payment-method">${escapeHtml(method)}</div><div class="payment-amount">${fmtCurrency(amount)}</div></div>`
       ).join('')}
     </div>`;
 }
@@ -1191,7 +1193,11 @@ function formatMonthLabel(monthStr) {
 }
 
 function fmtNum(n) {
-  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return Math.round(n).toLocaleString();
+}
+
+function fmtCurrency(n) {
+  return 'UGX ' + fmtNum(n);
 }
 
 // --- Report Print / PDF ---
@@ -1301,8 +1307,8 @@ function renderProductsTable(products) {
           <th>Name</th>
           <th>Category</th>
           <th>Size</th>
-          <th>Buy Price</th>
-          <th>Sell Price</th>
+          <th>Buy Price (UGX)</th>
+          <th>Sell Price (UGX)</th>
           <th>Stock</th>
           <th>Min Alert</th>
           ${isManager() ? '<th>Actions</th>' : ''}
@@ -1316,8 +1322,8 @@ function renderProductsTable(products) {
             <td>${escapeHtml(p.name)}</td>
             <td>${escapeHtml(p.category)}</td>
             <td>${escapeHtml(p.size_unit)}</td>
-            <td>${p.buying_price.toFixed(2)}</td>
-            <td>${p.selling_price.toFixed(2)}</td>
+            <td>${fmtNum(p.buying_price)}</td>
+            <td>${fmtNum(p.selling_price)}</td>
             <td class="${isLow ? 'stock-low' : ''}">${p.current_stock}</td>
             <td>${p.min_stock_alert}</td>
             ${isManager() ? `
