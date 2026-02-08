@@ -6,6 +6,45 @@ let deleteTargetId = null;
 let cart = [];
 let allProductsCache = [];
 
+// --- Inactivity Auto-Logout ---
+const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+let inactivityTimer = null;
+
+function resetInactivityTimer() {
+  if (inactivityTimer) clearTimeout(inactivityTimer);
+  if (!currentUser) return;
+  inactivityTimer = setTimeout(() => {
+    if (currentUser) {
+      currentUser = null;
+      cart = [];
+      showLogin();
+      showLoginError('You have been logged out due to inactivity.');
+    }
+  }, INACTIVITY_TIMEOUT);
+}
+
+function startInactivityTracking() {
+  const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+  events.forEach((evt) => document.addEventListener(evt, resetInactivityTimer, { passive: true }));
+  resetInactivityTimer();
+}
+
+function stopInactivityTracking() {
+  if (inactivityTimer) { clearTimeout(inactivityTimer); inactivityTimer = null; }
+}
+
+// Views accessible by role
+const MANAGER_VIEWS = ['dashboard', 'pos', 'products', 'sales', 'reports'];
+const WAITER_VIEWS = ['pos'];
+
+function getAllowedViews() {
+  return isManager() ? MANAGER_VIEWS : WAITER_VIEWS;
+}
+
+function getDefaultView() {
+  return isManager() ? 'dashboard' : 'pos';
+}
+
 // --- DOM References ---
 const loginScreen = document.getElementById('login-screen');
 const loginForm = document.getElementById('login-form');
@@ -52,6 +91,7 @@ function showLoginError(msg) {
 
 logoutBtn.addEventListener('click', (e) => {
   e.preventDefault();
+  stopInactivityTracking();
   currentUser = null;
   cart = [];
   showLogin();
@@ -70,14 +110,31 @@ function showApp() {
     <div class="user-name">${escapeHtml(currentUser.username)}</div>
     <div class="user-role">${escapeHtml(currentUser.role)}</div>`;
 
+  // Role-based nav: show/hide links
+  const allowed = getAllowedViews();
+  document.querySelectorAll('#sidebar a[data-view]').forEach((link) => {
+    const li = link.parentElement;
+    if (allowed.includes(link.dataset.view)) {
+      li.style.display = '';
+    } else {
+      li.style.display = 'none';
+      link.classList.remove('active');
+    }
+  });
+
+  const defaultView = getDefaultView();
   const activeLink = document.querySelector('#sidebar a.active');
   if (activeLink) activeLink.classList.remove('active');
-  const dashLink = document.querySelector('[data-view="dashboard"]');
-  if (dashLink) dashLink.classList.add('active');
-  loadView('dashboard');
+  const defaultLink = document.querySelector(`[data-view="${defaultView}"]`);
+  if (defaultLink) defaultLink.classList.add('active');
+  loadView(defaultView);
+
+  // Start auto-logout timer
+  startInactivityTracking();
 }
 
 function showLogin() {
+  stopInactivityTracking();
   appContainer.hidden = true;
   loginScreen.hidden = false;
   loginForm.reset();
@@ -97,6 +154,16 @@ document.querySelectorAll('#sidebar a[data-view]').forEach((link) => {
 });
 
 async function loadView(view) {
+  // Route protection: redirect to default view if not allowed
+  const allowed = getAllowedViews();
+  if (!allowed.includes(view)) {
+    view = getDefaultView();
+    const active = document.querySelector('#sidebar a.active');
+    if (active) active.classList.remove('active');
+    const link = document.querySelector(`[data-view="${view}"]`);
+    if (link) link.classList.add('active');
+  }
+
   const content = document.getElementById('content');
   switch (view) {
     case 'dashboard':
@@ -1263,10 +1330,11 @@ document.addEventListener('keydown', (e) => {
   if (!currentUser) return;
   const isFKey = e.key.startsWith('F') && e.key.length <= 3;
 
-  // F1-F5: Navigate views
+  // F1-F5: Navigate views (respects role-based access)
   if (NAV_SHORTCUTS[e.key]) {
     e.preventDefault();
     const view = NAV_SHORTCUTS[e.key];
+    if (!getAllowedViews().includes(view)) return;
     const link = document.querySelector(`[data-view="${view}"]`);
     if (link) {
       const active = document.querySelector('#sidebar a.active');
