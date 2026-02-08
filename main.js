@@ -64,6 +64,7 @@ function registerIpcHandlers() {
   ipcMain.handle('sales:create', (_e, sale) => database.createSale(sale));
   ipcMain.handle('sales:getAll', () => database.getAllSales());
   ipcMain.handle('sales:getById', (_e, id) => database.getSaleById(id));
+  ipcMain.handle('sales:refund', (_e, id) => database.refundSale(id));
 
   // Waiters (name-only)
   ipcMain.handle('waiters:getAll', () => database.getAllWaiters());
@@ -123,7 +124,52 @@ function registerIpcHandlers() {
     });
   });
 
-  // Save as PDF
+  // Save Report as PDF (A4 landscape)
+  ipcMain.handle('print:saveReportPdf', async (_e, reportHtml, defaultName) => {
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save Report as PDF',
+      defaultPath: path.join(app.getPath('documents'), `${defaultName}.pdf`),
+      filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+    });
+
+    if (canceled || !filePath) return { success: false };
+
+    const tmpPath = writeTempHtml(reportHtml);
+
+    return new Promise((resolve) => {
+      const pdfWindow = new BrowserWindow({
+        show: false,
+        width: 1200,
+        height: 900,
+        webPreferences: { contextIsolation: true, nodeIntegration: false },
+      });
+
+      pdfWindow.loadFile(tmpPath);
+
+      pdfWindow.webContents.on('did-finish-load', () => {
+        setTimeout(async () => {
+          try {
+            const pdfData = await pdfWindow.webContents.printToPDF({
+              printBackground: true,
+              landscape: true,
+              pageSize: 'A4',
+              margins: { top: 10, bottom: 10, left: 15, right: 15 },
+            });
+            fs.writeFileSync(filePath, pdfData);
+            pdfWindow.close();
+            try { fs.unlinkSync(tmpPath); } catch (_) {}
+            resolve({ success: true, filePath });
+          } catch (err) {
+            pdfWindow.close();
+            try { fs.unlinkSync(tmpPath); } catch (_) {}
+            resolve({ success: false, error: err.message });
+          }
+        }, 500);
+      });
+    });
+  });
+
+  // Save Receipt as PDF (thermal receipt width)
   ipcMain.handle('print:savePdf', async (_e, receiptHtml, defaultName) => {
     const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
       title: 'Save Receipt as PDF',

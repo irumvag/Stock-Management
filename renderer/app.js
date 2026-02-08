@@ -902,20 +902,24 @@ async function loadSalesHistory(container) {
           </tr>
         </thead>
         <tbody>
-          ${sales.map((s) => `
-            <tr>
+          ${sales.map((s) => {
+            const isRefunded = s.payment_method === 'REFUNDED';
+            return `
+            <tr class="${isRefunded ? 'row-refunded' : ''}">
               <td>${s.id}</td>
               <td>${new Date(s.sale_date).toLocaleString()}</td>
               <td>${escapeHtml(s.waiter_name)}</td>
               <td>${escapeHtml(s.customer_name || '-')}</td>
               <td>${s.products.length} item${s.products.length !== 1 ? 's' : ''}</td>
-              <td>${escapeHtml(s.payment_method)}</td>
-              <td><strong>${fmtCurrency(s.total_amount)}</strong></td>
+              <td>${isRefunded ? '<span class="refund-badge">REFUNDED</span>' : escapeHtml(s.payment_method)}</td>
+              <td><strong>${isRefunded ? '-' : fmtCurrency(s.total_amount)}</strong></td>
               <td class="actions-cell">
                 <button class="btn-sm btn-secondary" data-sale-view="${s.id}" title="View details">View</button>
-                <button class="btn-sm btn-primary" data-sale-reprint="${s.id}" title="Reprint receipt">Reprint</button>
+                ${isRefunded ? '' : `<button class="btn-sm btn-primary" data-sale-reprint="${s.id}" title="Reprint receipt">Reprint</button>
+                <button class="btn-sm btn-danger" data-sale-refund="${s.id}" title="Refund">Refund</button>`}
               </td>
-            </tr>`).join('')}
+            </tr>`;
+          }).join('')}
         </tbody>
       </table>
       <div id="sale-detail-panel" hidden></div>`}`;
@@ -935,6 +939,23 @@ async function loadSalesHistory(container) {
       const saleId = Number(btn.dataset.saleReprint);
       const sale = sales.find((s) => s.id === saleId);
       if (sale) showReceipt(sale);
+    });
+  });
+
+  // Bind Refund buttons (Manager only)
+  container.querySelectorAll('[data-sale-refund]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const saleId = Number(btn.dataset.saleRefund);
+      const sale = sales.find((s) => s.id === saleId);
+      if (!sale) return;
+      const itemList = sale.products.map((p) => `${p.quantity}x ${p.product_name}`).join(', ');
+      if (!confirm(`Refund sale #${saleId}?\n\nItems: ${itemList}\nTotal: ${fmtCurrency(sale.total_amount)}\n\nThis will restore stock and mark the sale as refunded.`)) return;
+      const result = await window.api.refundSale(saleId);
+      if (result.success) {
+        await loadSalesHistory(container);
+      } else {
+        alert(result.error || 'Failed to refund sale.');
+      }
     });
   });
 }
@@ -986,9 +1007,12 @@ function showSaleDetail(sale) {
         <div class="sale-detail-summary-row sale-detail-total"><span>TOTAL:</span><span>${fmtCurrency(sale.total_amount)}</span></div>
       </div>
       <div class="sale-detail-actions">
-        <button class="btn-primary btn-sm" id="sale-detail-reprint">Reprint Receipt</button>
-        <button class="btn-secondary btn-sm" id="sale-detail-pdf">Save as PDF</button>
-        <button class="btn-secondary btn-sm" id="sale-detail-print">Print</button>
+        ${sale.payment_method === 'REFUNDED' ? '<span class="refund-badge" style="font-size:14px;padding:6px 16px;">REFUNDED</span>' : `
+          <button class="btn-primary btn-sm" id="sale-detail-reprint">Reprint Receipt</button>
+          <button class="btn-secondary btn-sm" id="sale-detail-pdf">Save as PDF</button>
+          <button class="btn-secondary btn-sm" id="sale-detail-print">Print</button>
+          <button class="btn-danger btn-sm" id="sale-detail-refund">Refund Sale</button>
+        `}
       </div>
     </div>`;
 
@@ -996,12 +1020,27 @@ function showSaleDetail(sale) {
   panel.scrollIntoView({ behavior: 'smooth' });
 
   document.getElementById('sale-detail-close').addEventListener('click', () => { panel.hidden = true; });
-  document.getElementById('sale-detail-reprint').addEventListener('click', () => { showReceipt(sale); });
-  document.getElementById('sale-detail-pdf').addEventListener('click', async () => {
+
+  const reprintBtn = document.getElementById('sale-detail-reprint');
+  if (reprintBtn) reprintBtn.addEventListener('click', () => { showReceipt(sale); });
+  const pdfBtn = document.getElementById('sale-detail-pdf');
+  if (pdfBtn) pdfBtn.addEventListener('click', async () => {
     await window.api.saveReceiptPdf(buildReceiptPrintHtml(sale), `Receipt-${padReceiptNo(sale.id)}`);
   });
-  document.getElementById('sale-detail-print').addEventListener('click', async () => {
+  const printBtn = document.getElementById('sale-detail-print');
+  if (printBtn) printBtn.addEventListener('click', async () => {
     await window.api.printReceipt(buildReceiptPrintHtml(sale));
+  });
+  const refundBtn = document.getElementById('sale-detail-refund');
+  if (refundBtn) refundBtn.addEventListener('click', async () => {
+    if (!confirm(`Refund sale #${sale.id}? This will restore stock and mark the sale as refunded.`)) return;
+    const result = await window.api.refundSale(sale.id);
+    if (result.success) {
+      panel.hidden = true;
+      await loadSalesHistory(document.getElementById('content'));
+    } else {
+      alert(result.error || 'Failed to refund sale.');
+    }
   });
 }
 
@@ -1445,33 +1484,38 @@ function buildReportPrintHtml() {
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; padding: 30px; font-size: 13px; color: #333; }
-  h1 { font-size: 20px; margin-bottom: 4px; }
-  h2 { font-size: 16px; margin-bottom: 10px; }
-  h3 { font-size: 14px; margin-bottom: 8px; }
-  .print-header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #333; padding-bottom: 12px; }
-  .print-header .hotel { font-size: 18px; font-weight: bold; }
+  body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; padding: 24px 32px; font-size: 13px; color: #333; width: 100%; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 6px; }
+  h2 { font-size: 17px; margin-bottom: 10px; color: #1e293b; }
+  h3 { font-size: 14px; margin-bottom: 8px; color: #334155; }
+  .print-header { text-align: center; margin-bottom: 24px; border-bottom: 2px solid #333; padding-bottom: 14px; }
+  .print-header .hotel { font-size: 20px; font-weight: bold; }
   .print-header .date { font-size: 12px; color: #666; margin-top: 4px; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-  th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid #ddd; font-size: 12px; }
-  th { background: #f5f5f5; font-weight: 600; }
-  .stats-grid { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
-  .stat-card { border: 1px solid #ddd; border-radius: 6px; padding: 12px 16px; text-align: center; flex: 1; min-width: 100px; }
-  .stat-value { font-size: 18px; font-weight: 700; }
-  .stat-label { font-size: 11px; color: #666; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 16px; display: table; }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #ddd; font-size: 13px; }
+  th { background: #f5f5f5; font-weight: 600; font-size: 12px; }
+  td { font-size: 13px; }
+  .stats-grid { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+  .stat-card { border: 1px solid #ddd; border-radius: 6px; padding: 14px 18px; text-align: center; flex: 1; min-width: 120px; }
+  .stat-value { font-size: 20px; font-weight: 700; }
+  .stat-label { font-size: 12px; color: #666; margin-top: 3px; }
   .profit-positive { color: #16a34a; }
   .profit-negative { color: #dc2626; }
   .row-low-stock { background: #fff5f5; }
-  .payment-breakdown { display: flex; gap: 10px; margin-bottom: 16px; }
-  .payment-card { border: 1px solid #ddd; border-radius: 6px; padding: 10px 16px; text-align: center; }
-  .payment-method { font-size: 11px; color: #666; }
-  .payment-amount { font-size: 16px; font-weight: 600; }
-  .chart-bars, .chart-legend, .report-tabs, .report-date-picker button, #report-print-btn, #report-pdf-btn { display: none; }
+  .payment-breakdown { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .payment-card { border: 1px solid #ddd; border-radius: 6px; padding: 12px 18px; text-align: center; min-width: 120px; }
+  .payment-method { font-size: 12px; color: #666; }
+  .payment-amount { font-size: 17px; font-weight: 600; }
+  .waiter-detail-section { margin-top: 16px; padding: 14px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
+  .waiter-detail-section h3 { font-size: 14px; margin-bottom: 8px; }
+  .report-section { margin-bottom: 20px; }
+  .chart-bars, .chart-legend, .report-tabs, .report-date-picker button, #report-print-btn, #report-pdf-btn, .view-header button { display: none; }
   @media print { body { padding: 10px; } }
 </style></head><body>
   <div class="print-header">
     <div class="hotel">${HOTEL_NAME} - ${HOTEL_TAGLINE}</div>
-    <h1>Report</h1>
+    <div style="font-size:13px;color:#666;">${HOTEL_ADDRESS} | ${HOTEL_PHONE}</div>
+    <h1 style="margin-top:8px;">Report</h1>
     <div class="date">Generated: ${new Date().toLocaleString('en-GB')}</div>
   </div>
   ${reportContent.innerHTML}
@@ -1485,7 +1529,7 @@ async function printCurrentReport() {
 
 async function saveCurrentReportPdf() {
   const html = buildReportPrintHtml();
-  if (html) await window.api.saveReceiptPdf(html, `Report-${todayStr()}`);
+  if (html) await window.api.saveReportPdf(html, `Report-${todayStr()}`);
 }
 
 // =====================================================

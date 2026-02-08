@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('api', {
   createSale: (sale) => ipcRenderer.invoke('sales:create', sale),
   getSales: () => ipcRenderer.invoke('sales:getAll'),
   getSale: (id) => ipcRenderer.invoke('sales:getById', id),
+  refundSale: (id) => ipcRenderer.invoke('sales:refund', id),
 
   // Reports
   getSalesReport: (start, end) => ipcRenderer.invoke('reports:salesReport', start, end),
@@ -53,4 +54,5 @@ contextBridge.exposeInMainWorld('api', {
   // Printing
   printReceipt: (html) => ipcRenderer.invoke('print:receipt', html),
   saveReceiptPdf: (html, defaultName) => ipcRenderer.invoke('print:savePdf', html, defaultName),
+  saveReportPdf: (html, defaultName) => ipcRenderer.invoke('print:saveReportPdf', html, defaultName),
 });
