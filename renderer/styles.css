@@ -1294,6 +1294,110 @@ th {
   }
 }
 
+/* =====================================================
+   SALE DETAIL PANEL
+   ===================================================== */
+
+.sale-detail-card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 24px;
+  margin-top: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  border: 1px solid #e2e8f0;
+}
+
+.sale-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.sale-detail-header h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.sale-detail-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px 20px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.sale-detail-meta-item {
+  font-size: 14px;
+  color: #475569;
+}
+
+.meta-label {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.sale-detail-table {
+  margin-bottom: 16px;
+}
+
+.sale-detail-summary {
+  border-top: 2px solid #e2e8f0;
+  padding-top: 12px;
+  margin-bottom: 16px;
+  max-width: 300px;
+  margin-left: auto;
+}
+
+.sale-detail-summary-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 14px;
+  color: #475569;
+}
+
+.sale-detail-profit {
+  font-weight: 600;
+}
+
+.sale-detail-total {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1e293b;
+  border-top: 2px solid #1e293b;
+  padding-top: 8px;
+  margin-top: 4px;
+}
+
+.sale-detail-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* =====================================================
+   WAITER REPORT SECTIONS
+   ===================================================== */
+
+.waiter-detail-section {
+  margin-top: 20px;
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.waiter-detail-section h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 10px;
+}
+
 /* Small phones */
 @media (max-width: 600px) {
   #content {

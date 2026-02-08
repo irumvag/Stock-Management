@@ -414,6 +414,48 @@ function getMonthlySummary() {
   })).sort((a, b) => b.month.localeCompare(a.month));
 }
 
+function getWaiterDailyReport(date) {
+  const sales = db.prepare(
+    'SELECT * FROM sales WHERE date(sale_date) = date(?) ORDER BY sale_date DESC'
+  ).all(date);
+
+  const waiterMap = {};
+  for (const sale of sales) {
+    const w = sale.waiter_name;
+    if (!waiterMap[w]) {
+      waiterMap[w] = { waiter_name: w, totalSales: 0, totalRevenue: 0, totalCost: 0, totalItems: 0, sales: [] };
+    }
+    waiterMap[w].totalSales += 1;
+    waiterMap[w].totalRevenue += sale.total_amount;
+    const items = JSON.parse(sale.products);
+    for (const item of items) {
+      waiterMap[w].totalItems += item.quantity;
+      waiterMap[w].totalCost += (item.buying_price || 0) * item.quantity;
+    }
+    waiterMap[w].sales.push({ ...sale, products: items });
+  }
+
+  const waiters = Object.values(waiterMap).map((w) => ({
+    ...w,
+    totalProfit: w.totalRevenue - w.totalCost,
+  })).sort((a, b) => b.totalRevenue - a.totalRevenue);
+
+  const grandTotalRevenue = waiters.reduce((s, w) => s + w.totalRevenue, 0);
+  const grandTotalCost = waiters.reduce((s, w) => s + w.totalCost, 0);
+  const grandTotalItems = waiters.reduce((s, w) => s + w.totalItems, 0);
+  const grandTotalSales = waiters.reduce((s, w) => s + w.totalSales, 0);
+
+  return {
+    date,
+    waiters,
+    grandTotalSales,
+    grandTotalRevenue,
+    grandTotalCost,
+    grandTotalProfit: grandTotalRevenue - grandTotalCost,
+    grandTotalItems,
+  };
+}
+
 function getInventoryValueReport() {
   const products = db.prepare('SELECT * FROM products ORDER BY category, name').all();
 
@@ -487,5 +529,6 @@ module.exports = {
   getSalesByDateRange,
   getSalesReport,
   getMonthlySummary,
+  getWaiterDailyReport,
   getInventoryValueReport,
 };

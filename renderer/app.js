@@ -646,7 +646,9 @@ async function loadSalesHistory(container) {
   const sales = await window.api.getSales();
 
   container.innerHTML = `
-    <h1>Sales History</h1>
+    <div class="view-header">
+      <h1>Sales History</h1>
+    </div>
     ${sales.length === 0 ? '<div class="empty-state">No sales recorded yet.</div>' : `
       <table>
         <thead>
@@ -658,6 +660,7 @@ async function loadSalesHistory(container) {
             <th>Items</th>
             <th>Payment</th>
             <th>Total</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -670,9 +673,98 @@ async function loadSalesHistory(container) {
               <td>${s.products.length} item${s.products.length !== 1 ? 's' : ''}</td>
               <td>${escapeHtml(s.payment_method)}</td>
               <td><strong>${s.total_amount.toFixed(2)}</strong></td>
+              <td class="actions-cell">
+                <button class="btn-sm btn-secondary" data-sale-view="${s.id}" title="View details">View</button>
+                <button class="btn-sm btn-primary" data-sale-reprint="${s.id}" title="Reprint receipt">Reprint</button>
+              </td>
             </tr>`).join('')}
         </tbody>
-      </table>`}`;
+      </table>
+      <div id="sale-detail-panel" hidden></div>`}`;
+
+  // Bind View buttons
+  container.querySelectorAll('[data-sale-view]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const saleId = Number(btn.dataset.saleView);
+      const sale = sales.find((s) => s.id === saleId);
+      if (sale) showSaleDetail(sale);
+    });
+  });
+
+  // Bind Reprint buttons
+  container.querySelectorAll('[data-sale-reprint]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const saleId = Number(btn.dataset.saleReprint);
+      const sale = sales.find((s) => s.id === saleId);
+      if (sale) showReceipt(sale);
+    });
+  });
+}
+
+function showSaleDetail(sale) {
+  const panel = document.getElementById('sale-detail-panel');
+  if (!panel) return;
+
+  const { date, time } = formatReceiptDate(sale.sale_date);
+  const items = sale.products;
+  const itemCount = items.reduce((s, i) => s + i.quantity, 0);
+  const totalCost = items.reduce((s, i) => s + (i.buying_price || 0) * i.quantity, 0);
+  const profit = sale.total_amount - totalCost;
+
+  panel.innerHTML = `
+    <div class="sale-detail-card">
+      <div class="sale-detail-header">
+        <h3>Transaction #${padReceiptNo(sale.id)}</h3>
+        <button class="btn-secondary btn-sm" id="sale-detail-close">Close</button>
+      </div>
+      <div class="sale-detail-meta">
+        <div class="sale-detail-meta-item"><span class="meta-label">Date:</span> ${escapeHtml(date)} at ${escapeHtml(time)}</div>
+        <div class="sale-detail-meta-item"><span class="meta-label">Waiter:</span> ${escapeHtml(sale.waiter_name)}</div>
+        <div class="sale-detail-meta-item"><span class="meta-label">Customer:</span> ${escapeHtml(sale.customer_name || 'Walk-in')}</div>
+        <div class="sale-detail-meta-item"><span class="meta-label">Payment:</span> ${escapeHtml(sale.payment_method)}</div>
+      </div>
+      <table class="sale-detail-table">
+        <thead>
+          <tr><th>Product</th><th>Size</th><th>Unit Price</th><th>Qty</th><th>Subtotal</th></tr>
+        </thead>
+        <tbody>
+          ${items.map((item) => `
+            <tr>
+              <td>${escapeHtml(item.product_name)}</td>
+              <td>${escapeHtml(item.size_unit || '')}</td>
+              <td>${item.unit_price.toFixed(2)}</td>
+              <td>${item.quantity}</td>
+              <td>${item.subtotal.toFixed(2)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+      <div class="sale-detail-summary">
+        <div class="sale-detail-summary-row"><span>Items:</span><span>${itemCount}</span></div>
+        <div class="sale-detail-summary-row"><span>Revenue:</span><span>${sale.total_amount.toFixed(2)}</span></div>
+        ${isManager() ? `
+          <div class="sale-detail-summary-row"><span>Cost:</span><span>${totalCost.toFixed(2)}</span></div>
+          <div class="sale-detail-summary-row sale-detail-profit"><span>Profit:</span><span class="${profit >= 0 ? 'profit-positive' : 'profit-negative'}">${profit.toFixed(2)}</span></div>
+        ` : ''}
+        <div class="sale-detail-summary-row sale-detail-total"><span>TOTAL:</span><span>${sale.total_amount.toFixed(2)}</span></div>
+      </div>
+      <div class="sale-detail-actions">
+        <button class="btn-primary btn-sm" id="sale-detail-reprint">Reprint Receipt</button>
+        <button class="btn-secondary btn-sm" id="sale-detail-pdf">Save as PDF</button>
+        <button class="btn-secondary btn-sm" id="sale-detail-print">Print</button>
+      </div>
+    </div>`;
+
+  panel.hidden = false;
+  panel.scrollIntoView({ behavior: 'smooth' });
+
+  document.getElementById('sale-detail-close').addEventListener('click', () => { panel.hidden = true; });
+  document.getElementById('sale-detail-reprint').addEventListener('click', () => { showReceipt(sale); });
+  document.getElementById('sale-detail-pdf').addEventListener('click', async () => {
+    await window.api.saveReceiptPdf(buildReceiptPrintHtml(sale), `Receipt-${padReceiptNo(sale.id)}`);
+  });
+  document.getElementById('sale-detail-print').addEventListener('click', async () => {
+    await window.api.printReceipt(buildReceiptPrintHtml(sale));
+  });
 }
 
 // =====================================================
@@ -698,6 +790,7 @@ async function loadReports(container) {
       <button class="report-tab active" data-tab="daily">Daily Sales</button>
       <button class="report-tab" data-tab="daterange">Date Range</button>
       <button class="report-tab" data-tab="monthly">Monthly Summary</button>
+      <button class="report-tab" data-tab="bywaiter">By Waiter</button>
       <button class="report-tab" data-tab="bestsellers">Best Sellers</button>
       <button class="report-tab" data-tab="inventory">Inventory Value</button>
     </div>
@@ -725,6 +818,7 @@ async function loadReportTab(tab) {
     case 'daily': await loadDailyReport(rc); break;
     case 'daterange': await loadDateRangeReport(rc); break;
     case 'monthly': await loadMonthlyReport(rc); break;
+    case 'bywaiter': await loadWaiterDailyReport(rc); break;
     case 'bestsellers': await loadBestSellersReport(rc); break;
     case 'inventory': await loadInventoryValueReport(rc); break;
   }
@@ -742,6 +836,93 @@ async function loadDailyReport(container) {
       ${renderPaymentBreakdown(report.paymentBreakdown)}
       ${renderBestSellersTable(report.bestSellers, 'Today\'s Items Sold')}
     </div>`;
+}
+
+// --- By Waiter Report ---
+
+async function loadWaiterDailyReport(container) {
+  const today = todayStr();
+
+  container.innerHTML = `
+    <div class="report-section">
+      <div class="report-date-picker">
+        <div class="form-group">
+          <label for="waiter-report-date">Date</label>
+          <input type="date" id="waiter-report-date" value="${today}">
+        </div>
+        <button class="btn-primary btn-sm" id="waiter-report-btn">Generate</button>
+      </div>
+      <div id="waiter-report-result"></div>
+    </div>`;
+
+  document.getElementById('waiter-report-btn').addEventListener('click', generateWaiterReport);
+  generateWaiterReport();
+}
+
+async function generateWaiterReport() {
+  const date = document.getElementById('waiter-report-date').value;
+  if (!date) return;
+
+  const report = await window.api.getWaiterDailyReport(date);
+  const result = document.getElementById('waiter-report-result');
+
+  if (report.waiters.length === 0) {
+    result.innerHTML = `
+      <h2>Waiter Report - ${formatDateLabel(date)}</h2>
+      <div class="empty-state">No sales recorded on this date.</div>`;
+    return;
+  }
+
+  result.innerHTML = `
+    <h2>Waiter Report - ${formatDateLabel(date)}</h2>
+    <div class="stats-grid" style="margin-bottom:20px;">
+      <div class="stat-card"><div class="stat-value">${report.waiters.length}</div><div class="stat-label">Waiters Active</div></div>
+      <div class="stat-card"><div class="stat-value">${report.grandTotalSales}</div><div class="stat-label">Total Transactions</div></div>
+      <div class="stat-card"><div class="stat-value">${report.grandTotalItems}</div><div class="stat-label">Items Sold</div></div>
+      <div class="stat-card"><div class="stat-value">${fmtNum(report.grandTotalRevenue)}</div><div class="stat-label">Total Revenue</div></div>
+      <div class="stat-card"><div class="stat-value profit-positive">${fmtNum(report.grandTotalProfit)}</div><div class="stat-label">Total Profit</div></div>
+    </div>
+
+    <h3 style="margin-bottom:10px;">Performance by Waiter</h3>
+    <table style="margin-bottom:24px;">
+      <thead><tr><th>Waiter</th><th>Sales</th><th>Items</th><th>Revenue</th><th>Cost</th><th>Profit</th><th>Margin</th></tr></thead>
+      <tbody>
+        ${report.waiters.map((w) => {
+          const margin = w.totalRevenue > 0 ? ((w.totalProfit / w.totalRevenue) * 100).toFixed(1) : '0.0';
+          return `<tr>
+            <td><strong>${escapeHtml(w.waiter_name)}</strong></td>
+            <td>${w.totalSales}</td>
+            <td>${w.totalItems}</td>
+            <td>${fmtNum(w.totalRevenue)}</td>
+            <td>${fmtNum(w.totalCost)}</td>
+            <td class="${w.totalProfit >= 0 ? 'profit-positive' : 'profit-negative'}">${fmtNum(w.totalProfit)}</td>
+            <td>${margin}%</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+
+    ${report.waiters.map((w) => `
+      <div class="waiter-detail-section">
+        <h3>${escapeHtml(w.waiter_name)} - Transactions</h3>
+        <table>
+          <thead><tr><th>#</th><th>Time</th><th>Customer</th><th>Payment</th><th>Items</th><th>Total</th></tr></thead>
+          <tbody>
+            ${w.sales.map((s) => {
+              const saleTime = new Date(s.sale_date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+              const itemCount = s.products.reduce((sum, i) => sum + i.quantity, 0);
+              return `<tr>
+                <td>${s.id}</td>
+                <td>${saleTime}</td>
+                <td>${escapeHtml(s.customer_name || 'Walk-in')}</td>
+                <td>${escapeHtml(s.payment_method)}</td>
+                <td>${itemCount}</td>
+                <td><strong>${s.total_amount.toFixed(2)}</strong></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`).join('')}`;
 }
 
 // --- Date Range Report ---

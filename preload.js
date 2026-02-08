@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('api', {
   // Reports
   getSalesReport: (start, end) => ipcRenderer.invoke('reports:salesReport', start, end),
   getMonthlySummary: () => ipcRenderer.invoke('reports:monthlySummary'),
+  getWaiterDailyReport: (date) => ipcRenderer.invoke('reports:waiterDaily', date),
   getInventoryValueReport: () => ipcRenderer.invoke('reports:inventoryValue'),
 
   // Printing

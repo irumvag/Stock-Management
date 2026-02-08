@@ -68,6 +68,7 @@ function registerIpcHandlers() {
   // Reports
   ipcMain.handle('reports:salesReport', (_e, start, end) => database.getSalesReport(start, end));
   ipcMain.handle('reports:monthlySummary', () => database.getMonthlySummary());
+  ipcMain.handle('reports:waiterDaily', (_e, date) => database.getWaiterDailyReport(date));
   ipcMain.handle('reports:inventoryValue', () => database.getInventoryValueReport());
 
   // Printing
