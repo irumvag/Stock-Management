@@ -147,7 +147,8 @@ function showLogin() {
 document.querySelectorAll('#sidebar a[data-view]').forEach((link) => {
   link.addEventListener('click', (e) => {
     e.preventDefault();
-    document.querySelector('#sidebar a.active').classList.remove('active');
+    const active = document.querySelector('#sidebar a.active');
+    if (active) active.classList.remove('active');
     link.classList.add('active');
     loadView(link.dataset.view);
   });
@@ -374,7 +375,9 @@ function posSearchProducts() {
 
   const list = document.getElementById('pos-product-list');
   list.innerHTML = renderPOSProductGrid(filtered);
-  bindPOSProductEvents();
+  // Note: do NOT call bindPOSProductEvents() here - the delegated click handler
+  // on the container persists through innerHTML changes and stacking handlers
+  // would cause addToCart to fire multiple times per click.
 }
 
 // --- Cart Management ---
@@ -714,7 +717,7 @@ function showCompleteDraftModal(draftId) {
 }
 
 function getTimeAgo(dateStr) {
-  const diff = Date.now() - new Date(dateStr).getTime();
+  const diff = Date.now() - parseDbDate(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return 'just now';
   if (mins < 60) return `${mins}m ago`;
@@ -735,7 +738,7 @@ const HOTEL_PHONE = '0760-011106';
 let lastSaleReceipt = null;
 
 function formatReceiptDate(dateStr) {
-  const d = new Date(dateStr);
+  const d = parseDbDate(dateStr);
   const date = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   return { date, time };
@@ -830,24 +833,24 @@ function buildReceiptPrintHtml(sale) {
   .footer-thanks { font-weight: bold; font-size: 12px; }
 </style></head><body>
   <div class="logo">H</div>
-  <div class="hotel-name">${HOTEL_NAME}</div>
-  <div class="tagline">${HOTEL_TAGLINE}</div>
-  <div class="contact">${HOTEL_ADDRESS} | ${HOTEL_PHONE}</div>
+  <div class="hotel-name">${escapeHtml(HOTEL_NAME)}</div>
+  <div class="tagline">${escapeHtml(HOTEL_TAGLINE)}</div>
+  <div class="contact">${escapeHtml(HOTEL_ADDRESS)} | ${escapeHtml(HOTEL_PHONE)}</div>
   <div class="currency-label">All prices in UGX</div>
   <div class="divider"></div>
   <div class="receipt-no">Receipt #${padReceiptNo(sale.id)}</div>
-  <div class="meta-row"><span>Date:</span><span>${date}</span></div>
-  <div class="meta-row"><span>Time:</span><span>${time}</span></div>
-  <div class="meta-row"><span>Waiter:</span><span>${sale.waiter_name}</span></div>
-  ${sale.customer_name ? `<div class="meta-row"><span>Customer:</span><span>${sale.customer_name}</span></div>` : ''}
-  <div class="meta-row"><span>Payment:</span><span>${sale.payment_method}</span></div>
+  <div class="meta-row"><span>Date:</span><span>${escapeHtml(date)}</span></div>
+  <div class="meta-row"><span>Time:</span><span>${escapeHtml(time)}</span></div>
+  <div class="meta-row"><span>Waiter:</span><span>${escapeHtml(sale.waiter_name)}</span></div>
+  ${sale.customer_name ? `<div class="meta-row"><span>Customer:</span><span>${escapeHtml(sale.customer_name)}</span></div>` : ''}
+  <div class="meta-row"><span>Payment:</span><span>${escapeHtml(sale.payment_method)}</span></div>
   <div class="divider"></div>
   <table>
     <thead><tr><th>Item</th><th>Size</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
     <tbody>
       ${items.map((i) => `<tr>
-        <td>${i.product_name}</td>
-        <td>${i.size_unit || ''}</td>
+        <td>${escapeHtml(i.product_name)}</td>
+        <td>${escapeHtml(i.size_unit || '')}</td>
         <td>${i.quantity}</td>
         <td>${Math.round(i.unit_price).toLocaleString()}</td>
         <td>${Math.round(i.subtotal).toLocaleString()}</td>
@@ -859,7 +862,7 @@ function buildReceiptPrintHtml(sale) {
   <div class="summary-row grand-total"><span>TOTAL:</span><span>UGX ${Math.round(sale.total_amount).toLocaleString()}</span></div>
   <div class="divider"></div>
   <div class="footer">
-    <div class="footer-thanks">Thank you for visiting ${HOTEL_NAME}!</div>
+    <div class="footer-thanks">Thank you for visiting ${escapeHtml(HOTEL_NAME)}!</div>
     We look forward to serving you again.
   </div>
 </body></html>`;
@@ -907,7 +910,7 @@ async function loadSalesHistory(container) {
             return `
             <tr class="${isRefunded ? 'row-refunded' : ''}">
               <td>${s.id}</td>
-              <td>${new Date(s.sale_date).toLocaleString()}</td>
+              <td>${parseDbDate(s.sale_date).toLocaleString()}</td>
               <td>${escapeHtml(s.waiter_name)}</td>
               <td>${escapeHtml(s.customer_name || '-')}</td>
               <td>${s.products.length} item${s.products.length !== 1 ? 's' : ''}</td>
@@ -1186,7 +1189,7 @@ async function generateWaiterReport() {
           <thead><tr><th>#</th><th>Time</th><th>Customer</th><th>Payment</th><th>Items</th><th>Total</th></tr></thead>
           <tbody>
             ${w.sales.map((s) => {
-              const saleTime = new Date(s.sale_date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+              const saleTime = parseDbDate(s.sale_date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
               const itemCount = s.products.reduce((sum, i) => sum + i.quantity, 0);
               return `<tr>
                 <td>${s.id}</td>
@@ -1473,6 +1476,14 @@ function fmtNum(n) {
 
 function fmtCurrency(n) {
   return 'UGX ' + fmtNum(n);
+}
+
+// SQLite datetime('now') stores UTC without 'Z' suffix.
+// Without this helper, JS interprets the date string as local time, showing
+// times shifted by the timezone offset (e.g. 3 hours behind in Uganda UTC+3).
+function parseDbDate(str) {
+  if (!str) return new Date();
+  return new Date(str.replace(' ', 'T') + 'Z');
 }
 
 // --- Report Print / PDF ---
@@ -1775,7 +1786,7 @@ async function loadUsers(container) {
           <tr>
             <td><strong>${escapeHtml(u.username)}</strong>${u.username === 'admin' ? ' <span style="color:#94a3b8;font-size:11px;">(default)</span>' : ''}</td>
             <td><span class="role-badge role-${u.role.toLowerCase()}">${escapeHtml(u.role)}</span></td>
-            <td>${new Date(u.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+            <td>${parseDbDate(u.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
             <td class="actions-cell">
               <button class="btn-icon btn-edit" data-user-edit="${u.id}" title="Edit user">&#9998;</button>
               <button class="btn-icon" data-user-reset="${u.id}" title="Reset password">&#128274;</button>
@@ -1875,7 +1886,7 @@ async function loadUsers(container) {
             <tr>
               <td><strong>${escapeHtml(w.name)}</strong></td>
               <td><span class="role-badge ${w.active ? 'role-waiter' : 'role-inactive'}">${w.active ? 'Active' : 'Inactive'}</span></td>
-              <td>${new Date(w.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+              <td>${parseDbDate(w.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
               <td class="actions-cell">
                 <button class="btn-icon btn-edit" data-waiter-edit="${w.id}" data-waiter-name="${escapeHtml(w.name)}" title="Rename">&#9998;</button>
                 <button class="btn-icon" data-waiter-toggle="${w.id}" data-waiter-active="${w.active}" title="${w.active ? 'Deactivate' : 'Activate'}">${w.active ? '&#9940;' : '&#9989;'}</button>

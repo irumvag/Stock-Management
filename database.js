@@ -333,9 +333,18 @@ function createSale({ products: saleProducts, total_amount, waiter_name, custome
   const updateStock = db.prepare(
     'UPDATE products SET current_stock = current_stock - ?, updated_at = datetime(\'now\') WHERE id = ?'
   );
-  const getProduct = db.prepare('SELECT buying_price FROM products WHERE id = ?');
+  const getProduct = db.prepare('SELECT * FROM products WHERE id = ?');
 
   const transaction = db.transaction(() => {
+    // Validate stock availability before proceeding
+    for (const item of saleProducts) {
+      const prod = getProduct.get(item.product_id);
+      if (!prod) throw new Error(`Product "${item.product_name || item.product_id}" not found`);
+      if (prod.current_stock < item.quantity) {
+        throw new Error(`Insufficient stock for "${prod.name}": only ${prod.current_stock} available, requested ${item.quantity}`);
+      }
+    }
+
     // Enrich each item with buying_price for profit tracking
     const enriched = saleProducts.map((item) => {
       const prod = getProduct.get(item.product_id);
@@ -393,8 +402,9 @@ function refundSale(saleId) {
 // --- Reports ---
 
 function getSalesByDateRange(startDate, endDate) {
+  // Use 'localtime' modifier to convert UTC sale_date to local time for date comparison
   const sales = db.prepare(
-    'SELECT * FROM sales WHERE date(sale_date) >= date(?) AND date(sale_date) <= date(?) AND refunded = 0 ORDER BY sale_date DESC'
+    "SELECT * FROM sales WHERE date(sale_date, 'localtime') >= date(?) AND date(sale_date, 'localtime') <= date(?) AND refunded = 0 ORDER BY sale_date DESC"
   ).all(startDate, endDate);
   return sales.map((s) => ({ ...s, products: JSON.parse(s.products) }));
 }
@@ -458,7 +468,7 @@ function getSalesReport(startDate, endDate) {
 
 function getMonthlySummary() {
   const rows = db.prepare(
-    "SELECT strftime('%Y-%m', sale_date) AS month, products, total_amount FROM sales WHERE refunded = 0 ORDER BY sale_date"
+    "SELECT strftime('%Y-%m', sale_date, 'localtime') AS month, products, total_amount FROM sales WHERE refunded = 0 ORDER BY sale_date"
   ).all();
 
   const months = {};
@@ -483,8 +493,9 @@ function getMonthlySummary() {
 }
 
 function getWaiterDailyReport(date) {
+  // Use 'localtime' modifier to convert UTC sale_date to local time for date comparison
   const sales = db.prepare(
-    'SELECT * FROM sales WHERE date(sale_date) = date(?) AND refunded = 0 ORDER BY sale_date DESC'
+    "SELECT * FROM sales WHERE date(sale_date, 'localtime') = date(?) AND refunded = 0 ORDER BY sale_date DESC"
   ).all(date);
 
   const waiterMap = {};
@@ -619,9 +630,18 @@ function addItemsToDraft(draftId, items) {
   const updateStock = db.prepare(
     "UPDATE products SET current_stock = current_stock - ?, updated_at = datetime('now') WHERE id = ?"
   );
-  const getProduct = db.prepare('SELECT buying_price FROM products WHERE id = ?');
+  const getProduct = db.prepare('SELECT * FROM products WHERE id = ?');
 
   const transaction = db.transaction(() => {
+    // Validate stock availability before proceeding
+    for (const item of items) {
+      const prod = getProduct.get(item.product_id);
+      if (!prod) throw new Error(`Product "${item.product_name || item.product_id}" not found`);
+      if (prod.current_stock < item.quantity) {
+        throw new Error(`Insufficient stock for "${prod.name}": only ${prod.current_stock} available, requested ${item.quantity}`);
+      }
+    }
+
     for (const item of items) {
       const prod = getProduct.get(item.product_id);
       const buyingPrice = prod ? prod.buying_price : 0;
@@ -634,8 +654,12 @@ function addItemsToDraft(draftId, items) {
     db.prepare("UPDATE drafts SET updated_at = datetime('now') WHERE id = ?").run(draftId);
   });
 
-  transaction();
-  return { success: true, draft: getDraftById(draftId) };
+  try {
+    transaction();
+    return { success: true, draft: getDraftById(draftId) };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 }
 
 function removeItemFromDraft(draftItemId) {

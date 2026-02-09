@@ -40,55 +40,68 @@ app.on('window-all-closed', () => {
 // --- IPC Handlers ---
 
 function registerIpcHandlers() {
+  // Wrap database calls to catch errors and return them gracefully
+  // instead of crashing the app with unhandled rejections
+  function safeHandle(channel, handler) {
+    ipcMain.handle(channel, async (...args) => {
+      try {
+        return handler(...args);
+      } catch (err) {
+        console.error(`IPC error [${channel}]:`, err.message);
+        throw err; // Re-throw so renderer can catch it in try/catch
+      }
+    });
+  }
+
   // Auth
-  ipcMain.handle('auth:login', (_e, username, password) => database.authenticate(username, password));
-  ipcMain.handle('auth:createUser', (_e, user) => database.createUser(user));
-  ipcMain.handle('auth:getUsers', () => database.getAllUsers());
-  ipcMain.handle('auth:changePassword', (_e, userId, currentPw, newPw) => database.changePassword(userId, currentPw, newPw));
-  ipcMain.handle('auth:updateUser', (_e, id, data) => database.updateUser(id, data));
-  ipcMain.handle('auth:resetPassword', (_e, userId, newPw) => database.resetPassword(userId, newPw));
-  ipcMain.handle('auth:deleteUser', (_e, id) => database.deleteUser(id));
+  safeHandle('auth:login', (_e, username, password) => database.authenticate(username, password));
+  safeHandle('auth:createUser', (_e, user) => database.createUser(user));
+  safeHandle('auth:getUsers', () => database.getAllUsers());
+  safeHandle('auth:changePassword', (_e, userId, currentPw, newPw) => database.changePassword(userId, currentPw, newPw));
+  safeHandle('auth:updateUser', (_e, id, data) => database.updateUser(id, data));
+  safeHandle('auth:resetPassword', (_e, userId, newPw) => database.resetPassword(userId, newPw));
+  safeHandle('auth:deleteUser', (_e, id) => database.deleteUser(id));
 
   // Products
-  ipcMain.handle('products:getAll', () => database.getAllProducts());
-  ipcMain.handle('products:getById', (_e, id) => database.getProductById(id));
-  ipcMain.handle('products:getByCategory', (_e, category) => database.getProductsByCategory(category));
-  ipcMain.handle('products:search', (_e, query) => database.searchProducts(query));
-  ipcMain.handle('products:getCategories', () => database.getCategories());
-  ipcMain.handle('products:getLowStock', () => database.getLowStockProducts());
-  ipcMain.handle('products:create', (_e, product) => database.createProduct(product));
-  ipcMain.handle('products:update', (_e, product) => database.updateProduct(product));
-  ipcMain.handle('products:delete', (_e, id) => database.deleteProduct(id));
+  safeHandle('products:getAll', () => database.getAllProducts());
+  safeHandle('products:getById', (_e, id) => database.getProductById(id));
+  safeHandle('products:getByCategory', (_e, category) => database.getProductsByCategory(category));
+  safeHandle('products:search', (_e, query) => database.searchProducts(query));
+  safeHandle('products:getCategories', () => database.getCategories());
+  safeHandle('products:getLowStock', () => database.getLowStockProducts());
+  safeHandle('products:create', (_e, product) => database.createProduct(product));
+  safeHandle('products:update', (_e, product) => database.updateProduct(product));
+  safeHandle('products:delete', (_e, id) => database.deleteProduct(id));
 
   // Sales
-  ipcMain.handle('sales:create', (_e, sale) => database.createSale(sale));
-  ipcMain.handle('sales:getAll', () => database.getAllSales());
-  ipcMain.handle('sales:getById', (_e, id) => database.getSaleById(id));
-  ipcMain.handle('sales:refund', (_e, id) => database.refundSale(id));
+  safeHandle('sales:create', (_e, sale) => database.createSale(sale));
+  safeHandle('sales:getAll', () => database.getAllSales());
+  safeHandle('sales:getById', (_e, id) => database.getSaleById(id));
+  safeHandle('sales:refund', (_e, id) => database.refundSale(id));
 
   // Waiters (name-only)
-  ipcMain.handle('waiters:getAll', () => database.getAllWaiters());
-  ipcMain.handle('waiters:getActive', () => database.getActiveWaiters());
-  ipcMain.handle('waiters:create', (_e, name) => database.createWaiter(name));
-  ipcMain.handle('waiters:update', (_e, id, name) => database.updateWaiter(id, name));
-  ipcMain.handle('waiters:toggle', (_e, id, active) => database.toggleWaiter(id, active));
-  ipcMain.handle('waiters:delete', (_e, id) => database.deleteWaiter(id));
+  safeHandle('waiters:getAll', () => database.getAllWaiters());
+  safeHandle('waiters:getActive', () => database.getActiveWaiters());
+  safeHandle('waiters:create', (_e, name) => database.createWaiter(name));
+  safeHandle('waiters:update', (_e, id, name) => database.updateWaiter(id, name));
+  safeHandle('waiters:toggle', (_e, id, active) => database.toggleWaiter(id, active));
+  safeHandle('waiters:delete', (_e, id) => database.deleteWaiter(id));
 
   // Drafts (open tabs)
-  ipcMain.handle('drafts:create', (_e, data) => database.createDraft(data));
-  ipcMain.handle('drafts:addItems', (_e, draftId, items) => database.addItemsToDraft(draftId, items));
-  ipcMain.handle('drafts:removeItem', (_e, itemId) => database.removeItemFromDraft(itemId));
-  ipcMain.handle('drafts:getById', (_e, id) => database.getDraftById(id));
-  ipcMain.handle('drafts:getOpen', () => database.getOpenDrafts());
-  ipcMain.handle('drafts:complete', (_e, draftId, paymentMethod) => database.completeDraft(draftId, paymentMethod));
-  ipcMain.handle('drafts:update', (_e, id, data) => database.updateDraft(id, data));
-  ipcMain.handle('drafts:delete', (_e, id) => database.deleteDraft(id));
+  safeHandle('drafts:create', (_e, data) => database.createDraft(data));
+  safeHandle('drafts:addItems', (_e, draftId, items) => database.addItemsToDraft(draftId, items));
+  safeHandle('drafts:removeItem', (_e, itemId) => database.removeItemFromDraft(itemId));
+  safeHandle('drafts:getById', (_e, id) => database.getDraftById(id));
+  safeHandle('drafts:getOpen', () => database.getOpenDrafts());
+  safeHandle('drafts:complete', (_e, draftId, paymentMethod) => database.completeDraft(draftId, paymentMethod));
+  safeHandle('drafts:update', (_e, id, data) => database.updateDraft(id, data));
+  safeHandle('drafts:delete', (_e, id) => database.deleteDraft(id));
 
   // Reports
-  ipcMain.handle('reports:salesReport', (_e, start, end) => database.getSalesReport(start, end));
-  ipcMain.handle('reports:monthlySummary', () => database.getMonthlySummary());
-  ipcMain.handle('reports:waiterDaily', (_e, date) => database.getWaiterDailyReport(date));
-  ipcMain.handle('reports:inventoryValue', () => database.getInventoryValueReport());
+  safeHandle('reports:salesReport', (_e, start, end) => database.getSalesReport(start, end));
+  safeHandle('reports:monthlySummary', () => database.getMonthlySummary());
+  safeHandle('reports:waiterDaily', (_e, date) => database.getWaiterDailyReport(date));
+  safeHandle('reports:inventoryValue', () => database.getInventoryValueReport());
 
   // Helper: write HTML to temp file for reliable rendering
   function writeTempHtml(html) {
@@ -109,9 +122,17 @@ function registerIpcHandlers() {
         webPreferences: { contextIsolation: true, nodeIntegration: false },
       });
 
+      // Timeout fallback: if page doesn't load within 15 seconds, clean up
+      const loadTimeout = setTimeout(() => {
+        try { if (receiptWindow) { receiptWindow.close(); receiptWindow = null; } } catch (_) {}
+        try { fs.unlinkSync(tmpPath); } catch (_) {}
+        resolve({ success: false, error: 'Print timed out' });
+      }, 15000);
+
       receiptWindow.loadFile(tmpPath);
 
       receiptWindow.webContents.on('did-finish-load', () => {
+        clearTimeout(loadTimeout);
         setTimeout(() => {
           receiptWindow.webContents.print({ silent: false, printBackground: true }, (success) => {
             receiptWindow.close();
