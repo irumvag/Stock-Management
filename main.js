@@ -91,6 +91,7 @@ function registerIpcHandlers() {
   safeHandle('drafts:create', (_e, data) => database.createDraft(data));
   safeHandle('drafts:addItems', (_e, draftId, items) => database.addItemsToDraft(draftId, items));
   safeHandle('drafts:removeItem', (_e, itemId) => database.removeItemFromDraft(itemId));
+  safeHandle('drafts:updateItemQty', (_e, itemId, newQty) => database.updateDraftItemQty(itemId, newQty));
   safeHandle('drafts:getById', (_e, id) => database.getDraftById(id));
   safeHandle('drafts:getOpen', () => database.getOpenDrafts());
   safeHandle('drafts:complete', (_e, draftId, paymentMethod) => database.completeDraft(draftId, paymentMethod));

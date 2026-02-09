@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('api', {
   createDraft: (data) => ipcRenderer.invoke('drafts:create', data),
   addItemsToDraft: (draftId, items) => ipcRenderer.invoke('drafts:addItems', draftId, items),
   removeItemFromDraft: (itemId) => ipcRenderer.invoke('drafts:removeItem', itemId),
+  updateDraftItemQty: (itemId, newQty) => ipcRenderer.invoke('drafts:updateItemQty', itemId, newQty),
   getDraft: (id) => ipcRenderer.invoke('drafts:getById', id),
   getOpenDrafts: () => ipcRenderer.invoke('drafts:getOpen'),
   completeDraft: (draftId, paymentMethod) => ipcRenderer.invoke('drafts:complete', draftId, paymentMethod),

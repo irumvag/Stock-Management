@@ -626,9 +626,15 @@ async function renderDraftsList() {
           </div>
           <div class="draft-card-items">
             ${d.items.map((item) => `
-              <div class="draft-item-row">
-                <span>${item.quantity}x ${escapeHtml(item.product_name)} <small>${escapeHtml(item.size_unit)}</small></span>
-                <span>${fmtNum(item.subtotal)}</span>
+              <div class="draft-item-row" data-item-id="${item.id}">
+                <span class="draft-item-name">${escapeHtml(item.product_name)} <small>${escapeHtml(item.size_unit)}</small></span>
+                <div class="draft-item-controls">
+                  <button class="btn-draft-qty" data-item-minus="${item.id}" title="Reduce quantity">-</button>
+                  <span class="draft-item-qty">${item.quantity}</span>
+                  <button class="btn-draft-qty" data-item-plus="${item.id}" title="Add quantity">+</button>
+                  <span class="draft-item-subtotal">${fmtNum(item.subtotal)}</span>
+                  <button class="btn-draft-remove" data-item-remove="${item.id}" title="Remove item">&times;</button>
+                </div>
               </div>`).join('')}
           </div>
           <div class="draft-card-actions">
@@ -674,6 +680,48 @@ async function renderDraftsList() {
       const draftId = Number(btn.dataset.draftDelete);
       if (!confirm('Cancel this tab? All items will be returned to stock.')) return;
       await window.api.deleteDraft(draftId);
+      allProductsCache = await window.api.getProducts();
+      renderDraftsList();
+    });
+  });
+
+  // Bind item quantity +/- and remove buttons
+  container.querySelectorAll('[data-item-minus]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const itemId = Number(btn.dataset.itemMinus);
+      const qtyEl = btn.parentElement.querySelector('.draft-item-qty');
+      const currentQty = parseInt(qtyEl.textContent, 10);
+      if (currentQty <= 1) {
+        if (!confirm('Remove this item from the tab? Stock will be restored.')) return;
+        const result = await window.api.removeItemFromDraft(itemId);
+        if (!result.success) { alert(result.error); return; }
+      } else {
+        const result = await window.api.updateDraftItemQty(itemId, currentQty - 1);
+        if (!result.success) { alert(result.error); return; }
+      }
+      allProductsCache = await window.api.getProducts();
+      renderDraftsList();
+    });
+  });
+
+  container.querySelectorAll('[data-item-plus]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const itemId = Number(btn.dataset.itemPlus);
+      const qtyEl = btn.parentElement.querySelector('.draft-item-qty');
+      const currentQty = parseInt(qtyEl.textContent, 10);
+      const result = await window.api.updateDraftItemQty(itemId, currentQty + 1);
+      if (!result.success) { alert(result.error || 'Not enough stock'); return; }
+      allProductsCache = await window.api.getProducts();
+      renderDraftsList();
+    });
+  });
+
+  container.querySelectorAll('[data-item-remove]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const itemId = Number(btn.dataset.itemRemove);
+      if (!confirm('Remove this item from the tab? Stock will be restored.')) return;
+      const result = await window.api.removeItemFromDraft(itemId);
+      if (!result.success) { alert(result.error); return; }
       allProductsCache = await window.api.getProducts();
       renderDraftsList();
     });

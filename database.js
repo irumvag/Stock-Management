@@ -681,6 +681,46 @@ function removeItemFromDraft(draftItemId) {
   return { success: true };
 }
 
+function updateDraftItemQty(draftItemId, newQty) {
+  const item = db.prepare('SELECT * FROM draft_items WHERE id = ?').get(draftItemId);
+  if (!item) return { success: false, error: 'Item not found' };
+
+  const draft = db.prepare('SELECT status FROM drafts WHERE id = ?').get(item.draft_id);
+  if (!draft || draft.status !== 'open') return { success: false, error: 'Draft is not open' };
+
+  if (newQty <= 0) {
+    // Remove entirely - delegate to removeItemFromDraft
+    return removeItemFromDraft(draftItemId);
+  }
+
+  const diff = newQty - item.quantity; // positive = adding more, negative = returning
+
+  if (diff > 0) {
+    // Adding more items - check stock availability
+    const prod = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id);
+    if (!prod) return { success: false, error: 'Product not found' };
+    if (prod.current_stock < diff) {
+      return { success: false, error: `Insufficient stock for "${prod.name}": only ${prod.current_stock} available` };
+    }
+  }
+
+  const transaction = db.transaction(() => {
+    // Adjust stock: subtract diff (negative diff = stock restored)
+    db.prepare(
+      "UPDATE products SET current_stock = current_stock - ?, updated_at = datetime('now') WHERE id = ?"
+    ).run(diff, item.product_id);
+    // Update item quantity and subtotal
+    const newSubtotal = newQty * item.unit_price;
+    db.prepare(
+      "UPDATE draft_items SET quantity = ?, subtotal = ? WHERE id = ?"
+    ).run(newQty, newSubtotal, draftItemId);
+    db.prepare("UPDATE drafts SET updated_at = datetime('now') WHERE id = ?").run(item.draft_id);
+  });
+
+  transaction();
+  return { success: true };
+}
+
 function getDraftById(id) {
   const draft = db.prepare('SELECT * FROM drafts WHERE id = ?').get(id);
   if (!draft) return null;
@@ -805,6 +845,7 @@ module.exports = {
   createDraft,
   addItemsToDraft,
   removeItemFromDraft,
+  updateDraftItemQty,
   getDraftById,
   getOpenDrafts,
   completeDraft,
