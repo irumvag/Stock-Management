@@ -1236,18 +1236,27 @@ th {
     white-space: nowrap;
   }
 
+  /* Full-width nav row that WRAPS so every item stays reachable
+     (previously overflow-x:auto hid Daily Report / Reports / Users). */
   #sidebar ul {
     display: flex;
+    flex-wrap: wrap;
+    flex-basis: 100%;
+    width: 100%;
     margin-top: 0;
-    flex: 1;
-    overflow-x: auto;
+    border-top: 1px solid #334155;
   }
 
   #sidebar a {
-    padding: 12px 14px;
+    padding: 11px 16px;
     white-space: nowrap;
     min-height: 44px;
     font-size: 13px;
+  }
+
+  /* Sync badge sits inline in the top bar */
+  .sync-badge {
+    margin: 0 0 0 12px;
   }
 
   #sidebar a .shortcut-hint {
