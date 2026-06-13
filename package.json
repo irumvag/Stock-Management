@@ -1,0 +1,29 @@
+{
+  "name": "club-tmp-stock-manager",
+  "version": "2.0.0",
+  "description": "Club TMP Stock Management System — PWA with online sync (Release 2)",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "api": "vercel dev",
+    "migrate": "node db/migrate.js",
+    "seed": "node db/migrate.js --seed"
+  },
+  "author": "Club TMP",
+  "license": "ISC",
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4",
+    "bcryptjs": "^3.0.2",
+    "dexie": "^4.0.11",
+    "jsonwebtoken": "^9.0.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.7",
+    "vite": "^5.4.11",
+    "vite-plugin-pwa": "^0.21.1"
+  }
+}

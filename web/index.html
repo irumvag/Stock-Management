@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1e293b">
+  <title>Stock Management</title>
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Login Screen -->
+  <div id="login-screen">
+    <div class="login-container">
+      <div class="login-header">
+        <h1>Stock Manager</h1>
+        <p>Sign in to your account</p>
+      </div>
+      <form id="login-form">
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" required autocomplete="username" autofocus>
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required autocomplete="current-password">
+        </div>
+        <div id="login-error" class="error-message" hidden></div>
+        <button type="submit" class="btn-primary" style="width:100%">Sign In</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Main App (hidden until authenticated) -->
+  <div id="app" hidden>
+    <nav id="sidebar">
+      <h2>Stock Manager</h2>
+      <button id="sync-badge" class="sync-badge sync-idle" type="button"><span class="sync-dot"></span>Ready</button>
+      <div id="user-info"></div>
+      <ul id="nav-links">
+        <li><a href="#" data-view="dashboard" class="active">Dashboard <span class="shortcut-hint">F1</span></a></li>
+        <li><a href="#" data-view="pos">Point of Sale <span class="shortcut-hint">F2</span></a></li>
+        <li><a href="#" data-view="products">Inventory <span class="shortcut-hint">F3</span></a></li>
+        <li><a href="#" data-view="sales">Sales History <span class="shortcut-hint">F4</span></a></li>
+        <li><a href="#" data-view="daily">Daily Report <span class="shortcut-hint">F5</span></a></li>
+        <li><a href="#" data-view="reports">Reports <span class="shortcut-hint">F6</span></a></li>
+        <li><a href="#" data-view="users">Users <span class="shortcut-hint">F7</span></a></li>
+      </ul>
+      <div class="shortcuts-bar">
+        <span class="shortcut-badge"><kbd>F1</kbd>-<kbd>F6</kbd> Navigate</span>
+        <span class="shortcut-badge"><kbd>F9</kbd> Complete Sale</span>
+        <span class="shortcut-badge"><kbd>/</kbd> Search</span>
+        <span class="shortcut-badge"><kbd>Esc</kbd> Close</span>
+      </div>
+      <div id="sidebar-footer">
+        <a href="#" id="logout-btn">Sign Out</a>
+      </div>
+    </nav>
+    <main id="content">
+      <h1>Dashboard</h1>
+      <p>Welcome to the Stock Management System.</p>
+    </main>
+  </div>
+
+  <!-- Product Form Modal -->
+  <div id="product-modal" class="modal-overlay" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-title">Add Product</h2>
+        <button class="modal-close" id="modal-close-btn">&times;</button>
+      </div>
+      <form id="product-form">
+        <input type="hidden" id="pf-id">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="pf-name">Product Name</label>
+            <input type="text" id="pf-name" required placeholder="e.g. Fanta Premium">
+          </div>
+          <div class="form-group">
+            <label for="pf-category">Category</label>
+            <input type="text" id="pf-category" required list="category-list" placeholder="e.g. Soft Drinks">
+            <datalist id="category-list"></datalist>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="pf-size">Size / Unit</label>
+            <input type="text" id="pf-size" required placeholder="e.g. 350ml, 1 ltr">
+          </div>
+          <div class="form-group">
+            <label for="pf-stock">Initial Stock</label>
+            <input type="number" id="pf-stock" min="0" value="0" required>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="pf-selling">Selling Price</label>
+            <input type="number" id="pf-selling" min="0" step="0.01" value="0" required>
+          </div>
+          <div class="form-group"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="pf-min-stock">Min Stock Alert</label>
+            <input type="number" id="pf-min-stock" min="0" value="5" required>
+          </div>
+          <div class="form-group"></div>
+        </div>
+        <div id="product-form-error" class="error-message" hidden></div>
+        <div class="form-actions">
+          <button type="button" class="btn-secondary" id="modal-cancel-btn">Cancel</button>
+          <button type="submit" class="btn-primary">Save Product</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div id="delete-modal" class="modal-overlay" hidden>
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h2>Confirm Delete</h2>
+      </div>
+      <p id="delete-msg" style="padding: 20px;">Are you sure you want to delete this product?</p>
+      <div class="form-actions" style="padding: 0 20px 20px;">
+        <button class="btn-secondary" id="delete-cancel-btn">Cancel</button>
+        <button class="btn-danger" id="delete-confirm-btn">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Receipt Preview Modal -->
+  <div id="receipt-modal" class="modal-overlay" hidden>
+    <div class="modal modal-receipt">
+      <div class="modal-header">
+        <h2>Receipt</h2>
+        <button class="modal-close" id="receipt-close-btn">&times;</button>
+      </div>
+      <div id="receipt-content" style="padding: 20px;"></div>
+      <div class="form-actions receipt-actions" style="padding: 0 20px 20px;">
+        <button class="btn-secondary" id="receipt-done-btn">Close</button>
+        <button class="btn-secondary" id="receipt-pdf-btn">Save as PDF</button>
+        <button class="btn-primary" id="receipt-print-btn">Print Receipt</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
