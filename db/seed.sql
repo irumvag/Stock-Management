@@ -3,7 +3,7 @@
 -- Password hash below is bcrypt of 'admin123' (cost 10).
 
 INSERT INTO users (username, password_hash, role)
-VALUES ('admin', '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'Owner')
+VALUES ('admin', '$2b$10$vuhGfQTrC7I0MsKU5gX1JO1jyDB/xZhPnwAynsLCifJfWRblQqusa', 'Owner')
 ON CONFLICT (username) DO NOTHING;
 
 INSERT INTO products (uuid, name, category, size_unit, selling_price, current_stock, min_stock_alert) VALUES

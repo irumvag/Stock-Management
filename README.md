@@ -12,6 +12,18 @@ internet is available so the **Owner** can see live data and reports remotely.
 - New **Daily Report** (opening / closing / sold / amount + payments + expenses), matching the handwritten sheet.
 - **Sync status badge** in the sidebar (Synced / Pending / Offline / Syncing / Error).
 
+## Default login credentials
+Created by the seed (`npm run seed`):
+
+| Field    | Value      |
+|----------|------------|
+| Username | `admin`    |
+| Password | `admin123` |
+| Role     | Owner      |
+
+> ⚠️ Change this password after the first sign-in (Users → reset password).
+> The **first login must be online** so the device can cache the credentials; after that the same login works offline.
+
 ## Architecture
 ```
 PWA (web/)  ──IndexedDB(Dexie)+outbox──┐
