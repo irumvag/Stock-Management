@@ -1206,6 +1206,20 @@ th {
 .stat-value, .takings-value, .payment-amount,
 td, th { font-variant-numeric: tabular-nums; }
 
+/* --- Daily stock sheet: mode toggle + grouped layout --- */
+.stock-mode-toggle { display: inline-flex; background: #e2e8f0; border-radius: 8px; padding: 3px; gap: 2px; }
+.stock-mode-btn {
+  border: 0; background: transparent; padding: 6px 14px; border-radius: 6px;
+  font-size: 13px; font-weight: 600; color: #475569; cursor: pointer; min-height: 32px;
+}
+.stock-mode-btn.active { background: #fff; color: #1e293b; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+tr.cat-row td {
+  background: #f1f5f9; font-weight: 700; color: #1e293b; text-transform: uppercase;
+  font-size: 12px; letter-spacing: 0.03em;
+}
+tr.subtotal-row td { font-weight: 600; color: #475569; background: #fafbfc; }
+tr.row-muted td { color: #94a3b8; }
+
 /* --- Profit Colors --- */
 
 .profit-positive {

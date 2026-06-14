@@ -1300,6 +1300,49 @@ async function loadReportTab(tab) {
 // =====================================================
 
 let dailyReportDate = null;
+let dailyStockMode = 'full'; // 'full' = every item (like the book), 'sold' = only items that moved
+
+const DAILY_STOCK_HEAD = '<thead><tr><th>Item</th><th>Size</th><th>Opening</th><th>Closing</th><th>Sold</th><th>Price</th><th>Amount</th></tr></thead>';
+
+function dailyStockRow(i) {
+  const moved = i.sold > 0;
+  return `<tr class="${moved ? '' : 'row-muted'}">
+      <td>${escapeHtml(i.product_name)}</td>
+      <td>${escapeHtml(i.size_unit || '')}</td>
+      <td>${i.opening_stock}</td>
+      <td>${i.closing_stock}</td>
+      <td><strong>${i.sold || 0}</strong></td>
+      <td>${fmtNum(i.unit_price)}</td>
+      <td>${moved ? fmtNum(i.amount) : '—'}</td>
+    </tr>`;
+}
+
+// Builds the stock table. mode 'sold' = flat list of moved items; 'full' = every
+// item grouped by category with subtotals (matches the handwritten daily sheet).
+function buildDailyStockSection(report, mode) {
+  const items = report.items;
+  if (mode === 'sold') {
+    const sold = items.filter((i) => i.sold > 0);
+    if (sold.length === 0) return '<div class="empty-state">No items have gone out yet. Use "Capture Opening Stock" at the start of the day, then sales will appear here.</div>';
+    return `<table>${DAILY_STOCK_HEAD}<tbody>${sold.map(dailyStockRow).join('')}</tbody>
+      <tfoot><tr><th colspan="6" style="text-align:right">Total amount from stock</th><th>${fmtNum(report.totalAmountFromStock)}</th></tr></tfoot></table>`;
+  }
+  if (items.length === 0) return '<div class="empty-state">No products yet. Add products in Inventory first.</div>';
+  const byCat = {};
+  for (const i of items) (byCat[i.category] = byCat[i.category] || []).push(i);
+  let grand = 0;
+  let bodyHtml = '';
+  for (const cat of Object.keys(byCat).sort()) {
+    const list = byCat[cat];
+    const sub = list.reduce((s, i) => s + i.amount, 0);
+    grand += sub;
+    bodyHtml += `<tr class="cat-row"><td colspan="7">${escapeHtml(cat)}</td></tr>`;
+    bodyHtml += list.map(dailyStockRow).join('');
+    bodyHtml += `<tr class="subtotal-row"><td colspan="6" style="text-align:right">${escapeHtml(cat)} subtotal</td><td>${fmtNum(sub)}</td></tr>`;
+  }
+  return `<table>${DAILY_STOCK_HEAD}<tbody>${bodyHtml}</tbody>
+    <tfoot><tr><th colspan="6" style="text-align:right">Total amount from stock</th><th>${fmtNum(grand)}</th></tr></tfoot></table>`;
+}
 
 async function loadDailyStockReport(container) {
   dailyReportDate = dailyReportDate || todayStr();
@@ -1335,18 +1378,6 @@ async function renderDailyStockReport() {
   if (!body) return;
   const date = dailyReportDate;
   const report = await window.api.getDailyStockReport(date);
-  const sold = report.items.filter((i) => i.sold > 0);
-
-  const rows = sold.map((i) => `
-    <tr>
-      <td>${escapeHtml(i.product_name)}</td>
-      <td>${escapeHtml(i.size_unit || '')}</td>
-      <td>${i.opening_stock}</td>
-      <td>${i.closing_stock}</td>
-      <td><strong>${i.sold}</strong></td>
-      <td>${fmtNum(i.unit_price)}</td>
-      <td>${fmtNum(i.amount)}</td>
-    </tr>`).join('');
 
   const payments = Object.entries(report.payments);
   const fmtAddedAt = (iso) => iso ? new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -1362,13 +1393,14 @@ async function renderDailyStockReport() {
 
   body.innerHTML = `
     <div class="report-section">
-      <h2>Stock Out — ${formatDateLabel(date)}</h2>
-      ${sold.length === 0 ? '<div class="empty-state">No items have gone out yet. Use "Capture Opening Stock" at the start of the day, then sales will appear here.</div>' : `
-      <table>
-        <thead><tr><th>Item</th><th>Size</th><th>Opening</th><th>Closing</th><th>Sold</th><th>Price</th><th>Amount</th></tr></thead>
-        <tbody>${rows}</tbody>
-        <tfoot><tr><th colspan="6" style="text-align:right">Total amount from stock</th><th>${fmtNum(report.totalAmountFromStock)}</th></tr></tfoot>
-      </table>`}
+      <div class="view-header" style="margin-bottom:8px;">
+        <h2 style="margin:0;">Stock Sheet — ${formatDateLabel(date)}</h2>
+        <div class="stock-mode-toggle">
+          <button class="stock-mode-btn ${dailyStockMode === 'full' ? 'active' : ''}" data-stock-mode="full">Full Sheet</button>
+          <button class="stock-mode-btn ${dailyStockMode === 'sold' ? 'active' : ''}" data-stock-mode="sold">Sold Only</button>
+        </div>
+      </div>
+      ${buildDailyStockSection(report, dailyStockMode)}
 
       <h3 style="margin:20px 0 10px;">Payments &amp; Cash</h3>
       <div class="payment-breakdown">
@@ -1409,6 +1441,12 @@ async function renderDailyStockReport() {
   body.querySelectorAll('[data-exp-del]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       await window.api.deleteExpense(Number(btn.dataset.expDel));
+      renderDailyStockReport();
+    });
+  });
+  body.querySelectorAll('[data-stock-mode]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      dailyStockMode = btn.dataset.stockMode;
       renderDailyStockReport();
     });
   });
