@@ -8,7 +8,7 @@ export const SYNC_TABLES = {
     pushable: true,
   },
   sales: {
-    cols: ['uuid', 'sale_date', 'products', 'total_amount', 'waiter_name', 'customer_name', 'payment_method', 'refunded', 'updated_at', 'deleted'],
+    cols: ['uuid', 'sale_date', 'products', 'total_amount', 'waiter_name', 'customer_name', 'payment_method', 'cashier', 'refunded', 'updated_at', 'deleted'],
     json: ['products'],
     pushable: true,
   },

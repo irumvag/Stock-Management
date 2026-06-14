@@ -379,6 +379,7 @@ async function loadPOS(container) {
     <div class="view-header">
       <h1>Point of Sale</h1>
     </div>
+    <div id="pos-takings" class="takings-strip" aria-live="polite"></div>
     <div class="pos-tabs">
       <button class="pos-tab active" data-pos-tab="order">New Order</button>
       <button class="pos-tab" data-pos-tab="drafts">Open Tabs <span class="draft-count">${openDrafts.length}</span></button>
@@ -450,6 +451,26 @@ async function loadPOS(container) {
   document.getElementById('pos-save-draft-btn').addEventListener('click', saveToDraft);
   document.getElementById('pos-complete-btn').addEventListener('click', completeSale);
   bindPOSProductEvents();
+  refreshTakings();
+}
+
+// Live "money I collected today" strip on POS. Refreshes after each sale.
+async function refreshTakings() {
+  const el = document.getElementById('pos-takings');
+  if (!el || !currentUser) return;
+  const today = new Date().toLocaleDateString('en-CA');
+  const t = await window.api.getCashierTakings(today, currentUser.username);
+  const pay = Object.entries(t.payments);
+  el.innerHTML = `
+    <div class="takings-main">
+      <div class="takings-label">Your takings today · ${escapeHtml(currentUser.username)}</div>
+      <div class="takings-value">${fmtCurrency(t.totalCollected)}</div>
+    </div>
+    <div class="takings-meta">
+      <span><strong>${t.salesCount}</strong> sale(s)</span>
+      <span><strong>${t.itemsCount}</strong> item(s)</span>
+      ${pay.map(([m, a]) => `<span>${escapeHtml(m)}: <strong>${fmtNum(a)}</strong></span>`).join('')}
+    </div>`;
 }
 
 function renderPOSProductGrid(products) {
@@ -884,6 +905,7 @@ function showCompleteDraftModal(draftId) {
       showReceipt(result.sale);
       allProductsCache = await window.api.getProducts();
       renderDraftsList();
+      refreshTakings();
     } else {
       alert(result.error || 'Failed to complete tab.');
     }
@@ -1238,6 +1260,7 @@ async function loadReports(container) {
       <button class="report-tab" data-tab="daterange">Date Range</button>
       <button class="report-tab" data-tab="monthly">Monthly Summary</button>
       <button class="report-tab" data-tab="bywaiter">By Waiter</button>
+      <button class="report-tab" data-tab="bycashier">By Cashier</button>
       <button class="report-tab" data-tab="bestsellers">Best Sellers</button>
       <button class="report-tab" data-tab="inventory">Inventory Value</button>
     </div>
@@ -1266,6 +1289,7 @@ async function loadReportTab(tab) {
     case 'daterange': await loadDateRangeReport(rc); break;
     case 'monthly': await loadMonthlyReport(rc); break;
     case 'bywaiter': await loadWaiterDailyReport(rc); break;
+    case 'bycashier': await loadCashierDailyReport(rc); break;
     case 'bestsellers': await loadBestSellersReport(rc); break;
     case 'inventory': await loadInventoryValueReport(rc); break;
   }
@@ -1506,6 +1530,67 @@ async function generateWaiterReport() {
           </tbody>
         </table>
       </div>`).join('')}`;
+}
+
+// --- By Cashier Report (how much money each cashier collected that day) ---
+
+async function loadCashierDailyReport(container) {
+  const today = todayStr();
+  container.innerHTML = `
+    <div class="report-section">
+      <div class="report-date-picker">
+        <div class="form-group">
+          <label for="cashier-report-date">Date</label>
+          <input type="date" id="cashier-report-date" value="${today}">
+        </div>
+        <button class="btn-primary btn-sm" id="cashier-report-btn">Generate</button>
+      </div>
+      <div id="cashier-report-result"></div>
+    </div>`;
+  document.getElementById('cashier-report-btn').addEventListener('click', generateCashierReport);
+  generateCashierReport();
+}
+
+async function generateCashierReport() {
+  const date = document.getElementById('cashier-report-date').value;
+  if (!date) return;
+  const cashiers = await window.api.getCashiersDaily(date);
+  const result = document.getElementById('cashier-report-result');
+
+  if (cashiers.length === 0) {
+    result.innerHTML = `
+      <h2>Cashier Takings - ${formatDateLabel(date)}</h2>
+      <div class="empty-state">No sales recorded on this date.</div>`;
+    return;
+  }
+
+  const grandTotal = cashiers.reduce((s, c) => s + c.totalCollected, 0);
+  const grandSales = cashiers.reduce((s, c) => s + c.salesCount, 0);
+
+  result.innerHTML = `
+    <h2>Cashier Takings - ${formatDateLabel(date)}</h2>
+    <div class="stats-grid" style="margin-bottom:20px;">
+      <div class="stat-card"><div class="stat-value">${cashiers.length}</div><div class="stat-label">Cashiers Active</div></div>
+      <div class="stat-card"><div class="stat-value">${grandSales}</div><div class="stat-label">Total Transactions</div></div>
+      <div class="stat-card"><div class="stat-value">${fmtCurrency(grandTotal)}</div><div class="stat-label">Total Collected</div></div>
+    </div>
+
+    <h3 style="margin-bottom:10px;">Money Collected by Cashier</h3>
+    <table>
+      <thead><tr><th>Cashier</th><th>Sales</th><th>Items</th><th>Cash</th><th>Mobile Money</th><th>Card</th><th>Total Collected</th></tr></thead>
+      <tbody>
+        ${cashiers.map((c) => `<tr>
+            <td><strong>${escapeHtml(c.cashier)}</strong></td>
+            <td>${c.salesCount}</td>
+            <td>${c.itemsCount}</td>
+            <td>${fmtNum(c.payments['Cash'] || 0)}</td>
+            <td>${fmtNum(c.payments['Mobile Money'] || 0)}</td>
+            <td>${fmtNum(c.payments['Card'] || 0)}</td>
+            <td><strong>${fmtNum(c.totalCollected)}</strong></td>
+          </tr>`).join('')}
+      </tbody>
+      <tfoot><tr><th>Total</th><th>${grandSales}</th><th></th><th></th><th></th><th></th><th>${fmtNum(grandTotal)}</th></tr></tfoot>
+    </table>`;
 }
 
 // --- Date Range Report ---

@@ -185,7 +185,7 @@ async function createSale({ products: items, total_amount, waiter_name, customer
   const row = {
     uuid: uuid(), sale_date: nowIso(), products: enriched, total_amount,
     waiter_name, customer_name: customer_name || null, payment_method: payment_method || 'Cash',
-    refunded: false, updated_at: nowIso(), deleted: false,
+    cashier: currentActor.username, refunded: false, updated_at: nowIso(), deleted: false,
   };
   const id = await db.sales.add(row);
   await enqueue('sales', { ...row });
@@ -327,7 +327,8 @@ async function completeDraft(draftId, paymentMethod) {
   const sale = {
     uuid: uuid(), sale_date: nowIso(), products: enriched, total_amount: draft.total_amount,
     waiter_name: draft.waiter_name, customer_name: draft.customer_name || null,
-    payment_method: paymentMethod || 'Cash', refunded: false, updated_at: nowIso(), deleted: false,
+    payment_method: paymentMethod || 'Cash', cashier: currentActor.username,
+    refunded: false, updated_at: nowIso(), deleted: false,
   };
   const id = await db.sales.add(sale);
   await enqueue('sales', { ...sale });
@@ -497,6 +498,34 @@ async function getWaiterDailyReport(date) {
   };
 }
 
+// How much money a single cashier collected on a given day (their "takings").
+async function getCashierTakings(date, cashier) {
+  const sales = (await getSales()).filter((s) => !s.refunded && localDate(s.sale_date) === date && (s.cashier || '') === cashier);
+  const payments = {};
+  let totalCollected = 0, itemsCount = 0;
+  for (const s of sales) {
+    payments[s.payment_method] = (payments[s.payment_method] || 0) + s.total_amount;
+    totalCollected += s.total_amount;
+    for (const it of s.products) itemsCount += it.quantity;
+  }
+  return { date, cashier, salesCount: sales.length, itemsCount, totalCollected, payments };
+}
+
+// Per-cashier takings for a day (owner oversight) — who collected how much.
+async function getCashiersDaily(date) {
+  const sales = (await getSales()).filter((s) => !s.refunded && localDate(s.sale_date) === date);
+  const map = {};
+  for (const s of sales) {
+    const c = s.cashier || '(unknown)';
+    if (!map[c]) map[c] = { cashier: c, salesCount: 0, itemsCount: 0, totalCollected: 0, payments: {} };
+    map[c].salesCount += 1;
+    map[c].totalCollected += s.total_amount;
+    for (const it of s.products) map[c].itemsCount += it.quantity;
+    map[c].payments[s.payment_method] = (map[c].payments[s.payment_method] || 0) + s.total_amount;
+  }
+  return Object.values(map).sort((a, b) => b.totalCollected - a.totalCollected);
+}
+
 async function getInventoryValueReport() {
   const products = await getProducts();
   let totalSellingValue = 0;
@@ -549,6 +578,7 @@ export const api = {
   createSale, getSales, getSale, refundSale,
   getExpenses, createExpense, deleteExpense, captureOpeningStock, getDailyStockReport,
   getSalesReport, getMonthlySummary, getWaiterDailyReport, getInventoryValueReport,
+  getCashierTakings, getCashiersDaily,
   // Printing: in the browser, "Save as PDF" is the print dialog's destination.
   printReceipt: (html) => printHtml(html),
   saveReceiptPdf: (html) => printHtml(html),

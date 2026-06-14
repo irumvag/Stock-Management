@@ -1189,6 +1189,23 @@ th {
 .activity-tag.act-danger  { background: #fee2e2; color: #991b1b; }
 .activity-tag.act-info    { background: #e0f2fe; color: #075985; }
 
+/* --- Cashier "Today's takings" strip (POS) --- */
+.takings-strip {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 12px;
+  background: linear-gradient(135deg, #1e293b, #334155);
+  color: #fff; border-radius: 10px; padding: 14px 20px; margin-bottom: 16px;
+}
+.takings-strip:empty { display: none; }
+.takings-label { font-size: 12px; color: #cbd5e1; text-transform: uppercase; letter-spacing: 0.04em; }
+.takings-value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.takings-meta { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: #e2e8f0; }
+.takings-meta strong { color: #fff; font-variant-numeric: tabular-nums; }
+
+/* Tabular figures so money/columns align and don't shift (number-tabular rule) */
+.stat-value, .takings-value, .payment-amount,
+td, th { font-variant-numeric: tabular-nums; }
+
 /* --- Profit Colors --- */
 
 .profit-positive {
