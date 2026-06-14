@@ -356,7 +356,11 @@ async function getExpenses(date) {
   return (await db.expenses.toArray()).filter((e) => !e.deleted && e.expense_date === date);
 }
 async function createExpense({ expense_date, label, amount, category }) {
-  const row = { uuid: uuid(), expense_date, label, amount: Number(amount) || 0, category: category || 'Other', updated_at: nowIso(), deleted: false };
+  const now = nowIso();
+  const row = {
+    uuid: uuid(), expense_date, label, amount: Number(amount) || 0, category: category || 'Other',
+    added_by: currentActor.username, added_at: now, updated_at: now, deleted: false,
+  };
   const id = await db.expenses.add(row);
   await enqueue('expenses', { ...row });
   notifyMutation();

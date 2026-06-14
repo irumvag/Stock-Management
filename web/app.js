@@ -1325,11 +1325,14 @@ async function renderDailyStockReport() {
     </tr>`).join('');
 
   const payments = Object.entries(report.payments);
+  const fmtAddedAt = (iso) => iso ? new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
   const expensesRows = report.expenses.map((e) => `
     <tr>
       <td>${escapeHtml(e.label)}</td>
       <td>${escapeHtml(e.category)}</td>
       <td>${fmtNum(e.amount)}</td>
+      <td>${escapeHtml(e.added_by || '—')}</td>
+      <td style="white-space:nowrap;">${fmtAddedAt(e.added_at || e.updated_at)}</td>
       <td><button class="btn-icon btn-delete" data-exp-del="${e.id}" title="Delete">&#128465;</button></td>
     </tr>`).join('');
 
@@ -1358,7 +1361,7 @@ async function renderDailyStockReport() {
       </form>
       ${report.expenses.length === 0 ? '' : `
       <table style="margin-top:12px;">
-        <thead><tr><th>Label</th><th>Category</th><th>Amount</th><th></th></tr></thead>
+        <thead><tr><th>Label</th><th>Category</th><th>Amount</th><th>Added by</th><th>Added at</th><th></th></tr></thead>
         <tbody>${expensesRows}</tbody>
       </table>`}
 

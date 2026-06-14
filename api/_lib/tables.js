@@ -26,7 +26,7 @@ export const SYNC_TABLES = {
     pushable: true,
   },
   expenses: {
-    cols: ['uuid', 'expense_date', 'label', 'amount', 'category', 'updated_at', 'deleted'],
+    cols: ['uuid', 'expense_date', 'label', 'amount', 'category', 'added_by', 'added_at', 'updated_at', 'deleted'],
     pushable: true,
   },
   activity_log: {
