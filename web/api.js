@@ -16,6 +16,29 @@ async function persist(table, row) {
   notifyMutation();
 }
 
+// ---------- Activity log (audit trail) ----------
+// app.js calls setActor() at login so each logged action records who did it.
+let currentActor = { username: 'unknown', role: '' };
+function setActor(user) {
+  if (user) currentActor = { username: user.username, role: user.role };
+}
+
+// Append an immutable activity record (synced like any other table).
+async function logActivity(action, details = '') {
+  const row = {
+    uuid: uuid(), at: nowIso(), username: currentActor.username,
+    role: currentActor.role, action, details, deleted: false, updated_at: nowIso(),
+  };
+  await db.activity_log.add(row);
+  await enqueue('activity_log', { ...row });
+  // no notifyMutation(): logging shouldn't itself flip the badge to "pending"
+}
+
+async function getActivityLog(limit = 200) {
+  const rows = (await db.activity_log.toArray()).filter((r) => !r.deleted);
+  return rows.sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, limit);
+}
+
 // ---------- Auth ----------
 
 async function login(username, password) {
@@ -112,6 +135,7 @@ async function createProduct(p) {
   const id = await db.products.add(row);
   await enqueue('products', { ...row });
   notifyMutation();
+  await logActivity('Added product', `${row.name} (${row.category}) — stock ${row.current_stock}, price ${row.selling_price}`);
   return { id, ...row };
 }
 async function updateProduct(p) {
@@ -123,11 +147,18 @@ async function updateProduct(p) {
     min_stock_alert: Number(p.min_stock_alert) || 0, updated_at: nowIso(),
   };
   await persist('products', row);
+  const parts = [];
+  if (existing.current_stock !== row.current_stock) parts.push(`stock ${existing.current_stock} → ${row.current_stock}`);
+  if (existing.selling_price !== row.selling_price) parts.push(`price ${existing.selling_price} → ${row.selling_price}`);
+  await logActivity('Updated product', `${row.name}${parts.length ? ' — ' + parts.join(', ') : ''}`);
   return row;
 }
 async function deleteProduct(id) {
   const existing = await db.products.get(id);
-  if (existing) await persist('products', { ...existing, deleted: true, updated_at: nowIso() });
+  if (existing) {
+    await persist('products', { ...existing, deleted: true, updated_at: nowIso() });
+    await logActivity('Deleted product', existing.name);
+  }
   return { success: true };
 }
 
@@ -160,6 +191,8 @@ async function createSale({ products: items, total_amount, waiter_name, customer
   await enqueue('sales', { ...row });
   for (const item of items) await adjustStock(item.product_id, -item.quantity);
   notifyMutation();
+  const itemCount = items.reduce((s, i) => s + i.quantity, 0);
+  await logActivity('Recorded sale', `${itemCount} item(s), ${row.total_amount} (${row.payment_method}) — ${row.waiter_name}`);
   return { id, ...row };
 }
 async function getSales() {
@@ -174,6 +207,7 @@ async function refundSale(id) {
   if (sale.refunded) return { success: false, error: 'Sale already refunded' };
   for (const item of sale.products) await adjustStock(item.product_id, item.quantity);
   await persist('sales', { ...sale, refunded: true, updated_at: nowIso() });
+  await logActivity('Refunded sale', `${sale.total_amount} — ${sale.waiter_name}`);
   return { success: true };
 }
 
@@ -326,6 +360,7 @@ async function createExpense({ expense_date, label, amount, category }) {
   const id = await db.expenses.add(row);
   await enqueue('expenses', { ...row });
   notifyMutation();
+  await logActivity('Added expense', `${row.label} — ${row.amount} (${row.category})`);
   return { id, ...row };
 }
 async function deleteExpense(id) {
@@ -349,6 +384,7 @@ async function captureOpeningStock(date) {
     await enqueue('daily_snapshots', { ...row });
   }
   notifyMutation();
+  await logActivity('Captured opening stock', `for ${date}`);
   return { success: true };
 }
 
@@ -499,6 +535,7 @@ function printHtml(html) {
 }
 
 export const api = {
+  setActor, logActivity, getActivityLog,
   login, getUsers, createUser, changePassword, updateUser, resetPassword, deleteUser,
   getProducts, getProduct, getProductsByCategory, searchProducts, getCategories, getLowStockProducts,
   createProduct, updateProduct, deleteProduct,

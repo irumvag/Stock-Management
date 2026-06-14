@@ -1,7 +1,7 @@
 import { db, getMeta, setMeta, nowIso } from './db.js';
 
 // Tables pulled from the server, in apply order. `users` included for offline login.
-const PULL_TABLES = ['products', 'waiters', 'drafts', 'sales', 'daily_snapshots', 'expenses', 'users'];
+const PULL_TABLES = ['products', 'waiters', 'drafts', 'sales', 'daily_snapshots', 'expenses', 'activity_log', 'users'];
 
 let status = navigator.onLine ? 'idle' : 'offline';
 const listeners = new Set();

@@ -29,6 +29,11 @@ export const SYNC_TABLES = {
     cols: ['uuid', 'expense_date', 'label', 'amount', 'category', 'updated_at', 'deleted'],
     pushable: true,
   },
+  activity_log: {
+    // Append-only audit trail. Cashier devices push; owner pulls to review.
+    cols: ['uuid', 'at', 'username', 'role', 'action', 'details', 'updated_at', 'deleted'],
+    pushable: true,
+  },
   users: {
     // Pulled so cached credentials allow offline login. Hash only, never plaintext.
     cols: ['uuid', 'username', 'password_hash', 'role', 'updated_at', 'deleted'],

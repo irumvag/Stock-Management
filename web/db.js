@@ -17,6 +17,11 @@ db.version(1).stores({
   meta: 'key', // sync cursor, auth token, current user
 });
 
+// v2: append-only activity history so the owner can see what each user did.
+db.version(2).stores({
+  activity_log: '++id, uuid, at, username, action, deleted',
+});
+
 export function uuid() {
   return crypto.randomUUID();
 }

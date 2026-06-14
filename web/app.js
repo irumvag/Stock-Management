@@ -33,9 +33,12 @@ function stopInactivityTracking() {
   if (inactivityTimer) { clearTimeout(inactivityTimer); inactivityTimer = null; }
 }
 
-// Views accessible by role
-// Owner: full reports + management. Cashier: data entry (POS, daily report, inventory).
-const OWNER_VIEWS = ['dashboard', 'pos', 'products', 'sales', 'daily', 'reports', 'users'];
+// Views accessible by role.
+// Owner is a hands-off investor: oversight only — dashboard, reports, activity
+// history, and user management. The Cashier runs day-to-day operations and does
+// everything hands-on: POS, full inventory management (add products / update
+// stock), sales, and the daily reconciliation report.
+const OWNER_VIEWS = ['dashboard', 'pos', 'products', 'sales', 'daily', 'reports', 'activity', 'users'];
 const CASHIER_VIEWS = ['pos', 'products', 'daily', 'sales'];
 
 function getAllowedViews() {
@@ -77,6 +80,7 @@ loginForm.addEventListener('submit', async (e) => {
 
   if (result.success) {
     currentUser = result.user;
+    window.api.setActor(currentUser); // stamp activity-log entries with who's acting
     showApp();
   } else {
     showLoginError(result.error);
@@ -188,6 +192,9 @@ async function loadView(view) {
     case 'reports':
       await loadReports(content);
       break;
+    case 'activity':
+      await loadActivity(content);
+      break;
     case 'users':
       await loadUsers(content);
       break;
@@ -195,14 +202,107 @@ async function loadView(view) {
 }
 
 // =====================================================
+// ACTIVITY HISTORY (owner oversight / audit trail)
+// =====================================================
+
+async function loadActivity(container) {
+  const entries = await window.api.getActivityLog(300);
+
+  const actionClass = (a) => {
+    if (/Deleted|Refunded/.test(a)) return 'act-danger';
+    if (/Added|Recorded|Captured/.test(a)) return 'act-success';
+    return 'act-info';
+  };
+  const fmtWhen = (iso) => new Date(iso).toLocaleString('en-GB', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
+
+  container.innerHTML = `
+    <div class="view-header">
+      <h1>Activity History</h1>
+      <span class="chart-subtitle">${entries.length} recent action(s) — newest first</span>
+    </div>
+    ${entries.length === 0 ? '<div class="empty-state">No activity recorded yet.</div>' : `
+    <table>
+      <thead>
+        <tr><th>When</th><th>User</th><th>Action</th><th>Details</th></tr>
+      </thead>
+      <tbody>
+        ${entries.map((e) => `
+          <tr>
+            <td style="white-space:nowrap;">${fmtWhen(e.at)}</td>
+            <td>${escapeHtml(e.username)}${e.role ? ` <span class="role-badge role-${String(e.role).toLowerCase()}">${escapeHtml(e.role)}</span>` : ''}</td>
+            <td><span class="activity-tag ${actionClass(e.action)}">${escapeHtml(e.action)}</span></td>
+            <td>${escapeHtml(e.details || '')}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`}`;
+}
+
+// =====================================================
 // DASHBOARD
 // =====================================================
+
+// Vertical bar chart (SVG) for the 7-day sales trend.
+function renderVBars(items) {
+  const W = 320, H = 150, pad = 22, base = H - 18;
+  const max = Math.max(...items.map((i) => i.value), 1);
+  const n = items.length;
+  const slot = (W - pad * 2) / n;
+  const bw = Math.min(28, slot * 0.55);
+  const bars = items.map((it, i) => {
+    const x = pad + slot * i + (slot - bw) / 2;
+    const h = Math.round((it.value / max) * (base - 12));
+    const y = base - h;
+    return `<rect x="${x.toFixed(1)}" y="${y}" width="${bw.toFixed(1)}" height="${h}" rx="3" fill="#3b82f6"></rect>
+      <text x="${(x + bw / 2).toFixed(1)}" y="${base + 13}" text-anchor="middle" class="vbar-label">${escapeHtml(it.label)}</text>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" class="vbars" preserveAspectRatio="xMidYMid meet">
+    <line x1="${pad}" y1="${base}" x2="${W - pad}" y2="${base}" stroke="#e2e8f0"></line>${bars}</svg>`;
+}
+
+// Horizontal bars for ranked lists. money=true formats values as currency.
+function renderHBars(items, color, money) {
+  const max = Math.max(...items.map((i) => i.value), 1);
+  return `<div class="hbars">${items.map((i) => `
+    <div class="hbar-row">
+      <div class="hbar-label" title="${escapeHtml(i.label)}">${escapeHtml(i.label)}</div>
+      <div class="hbar-track"><div class="hbar-fill" style="width:${Math.max(3, Math.round(i.value / max * 100))}%;background:${color}"></div></div>
+      <div class="hbar-value">${money ? fmtNum(i.value) : i.value}</div>
+    </div>`).join('')}</div>`;
+}
 
 async function loadDashboard(container) {
   const products = await window.api.getProducts();
   const lowStock = products.filter((p) => p.current_stock <= p.min_stock_alert);
   const totalValue = products.reduce((sum, p) => sum + p.selling_price * p.current_stock, 0);
   const categories = [...new Set(products.map((p) => p.category))];
+
+  // --- Chart data ---
+  const dayKey = (d) => d.toLocaleDateString('en-CA');
+  const today = new Date();
+  const last7 = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    last7.push({ key: dayKey(d), label: d.toLocaleDateString('en-GB', { weekday: 'short' }) });
+  }
+  const sales = (await window.api.getSales()).filter((s) => !s.refunded);
+  const byDay = Object.fromEntries(last7.map((d) => [d.key, 0]));
+  for (const s of sales) {
+    const k = dayKey(new Date(s.sale_date));
+    if (k in byDay) byDay[k] += s.total_amount;
+  }
+  const week = last7.map((d) => ({ label: d.label, value: byDay[d.key] }));
+  const weekTotal = week.reduce((s, d) => s + d.value, 0);
+
+  // Top products by units sold (last 30 days)
+  const start30 = new Date(today); start30.setDate(start30.getDate() - 29);
+  const rep = await window.api.getSalesReport(dayKey(start30), dayKey(today));
+  const topProducts = rep.bestSellers.slice(0, 5).map((p) => ({ label: p.product_name, value: p.total_qty }));
+
+  // Stock value by category
+  const inv = await window.api.getInventoryValueReport();
+  const catValues = inv.categories.slice(0, 6).map((c) => ({ label: c.category, value: c.sellingValue }));
 
   container.innerHTML = `
     <h1>Dashboard</h1>
@@ -224,6 +324,23 @@ async function loadDashboard(container) {
         <div class="stat-label">Low Stock Alerts</div>
       </div>
     </div>
+
+    <div class="dashboard-charts">
+      <div class="chart-card">
+        <h3>Sales — Last 7 Days</h3>
+        <div class="chart-subtitle">Total out: ${fmtCurrency(weekTotal)}</div>
+        ${renderVBars(week)}
+      </div>
+      <div class="chart-card">
+        <h3>Top Products — Units Sold (30 days)</h3>
+        ${topProducts.length ? renderHBars(topProducts, '#3b82f6', false) : '<div class="empty-state">No sales in the last 30 days.</div>'}
+      </div>
+      <div class="chart-card">
+        <h3>Stock Value by Category</h3>
+        ${catValues.length ? renderHBars(catValues, '#10b981', true) : '<div class="empty-state">No products yet.</div>'}
+      </div>
+    </div>
+
     ${lowStock.length > 0 ? `
       <h2 style="margin-top:30px;">Low Stock Alerts</h2>
       <table class="low-stock-table">
@@ -1723,7 +1840,7 @@ async function loadInventory(container) {
   container.innerHTML = `
     <div class="view-header">
       <h1>Inventory</h1>
-      ${isManager() ? '<button class="btn-primary btn-sm" id="add-product-btn">+ Add Product</button>' : ''}
+      <button class="btn-primary btn-sm" id="add-product-btn">+ Add Product</button>
     </div>
     <div class="toolbar">
       <input type="text" id="search-input" class="search-input" placeholder="Search products...">
@@ -1764,7 +1881,7 @@ function renderProductsTable(products) {
           <th>Sell Price (UGX)</th>
           <th>Stock</th>
           <th>Min Alert</th>
-          ${isManager() ? '<th>Actions</th>' : ''}
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -1778,11 +1895,10 @@ function renderProductsTable(products) {
             <td>${fmtNum(p.selling_price)}</td>
             <td class="${isLow ? 'stock-low' : ''}">${p.current_stock}</td>
             <td>${p.min_stock_alert}</td>
-            ${isManager() ? `
-              <td class="actions-cell">
-                <button class="btn-icon btn-edit" data-id="${p.id}" title="Edit">&#9998;</button>
-                <button class="btn-icon btn-delete" data-id="${p.id}" title="Delete">&#128465;</button>
-              </td>` : ''}
+            <td class="actions-cell">
+              <button class="btn-icon btn-edit" data-id="${p.id}" title="Edit">&#9998;</button>
+              <button class="btn-icon btn-delete" data-id="${p.id}" title="Delete">&#128465;</button>
+            </td>
           </tr>`;
         }).join('')}
       </tbody>
@@ -2368,7 +2484,8 @@ const NAV_SHORTCUTS = {
   F4: 'sales',
   F5: 'daily',
   F6: 'reports',
-  F7: 'users',
+  F7: 'activity',
+  F8: 'users',
 };
 
 document.addEventListener('keydown', (e) => {
@@ -2422,8 +2539,8 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // N key: New product (when not in input, Manager only, in Inventory view)
-  if (e.key === 'n' && !inInput && isManager()) {
+  // N key: New product (when not in input, only if the Add button is present)
+  if (e.key === 'n' && !inInput) {
     const addBtn = document.getElementById('add-product-btn');
     if (addBtn) { e.preventDefault(); openProductModal(); }
     return;
