@@ -18,8 +18,12 @@
       </div>
       <form id="login-form">
         <div class="form-group">
+          <label for="company-code">Company Code</label>
+          <input type="text" id="company-code" name="company" autocomplete="organization" placeholder="e.g. clubtmp (leave empty for system admin)" autofocus>
+        </div>
+        <div class="form-group">
           <label for="username">Username</label>
-          <input type="text" id="username" name="username" required autocomplete="username" autofocus>
+          <input type="text" id="username" name="username" required autocomplete="username">
         </div>
         <div class="form-group">
           <label for="password">Password</label>
@@ -46,6 +50,7 @@
         <li><a href="#" data-view="reports">Reports <span class="shortcut-hint">F6</span></a></li>
         <li><a href="#" data-view="activity">Activity <span class="shortcut-hint">F7</span></a></li>
         <li><a href="#" data-view="users">Users <span class="shortcut-hint">F8</span></a></li>
+        <li><a href="#" data-view="companies">Companies</a></li>
       </ul>
       <div class="shortcuts-bar">
         <span class="shortcut-badge"><kbd>F1</kbd>-<kbd>F8</kbd> Navigate</span>

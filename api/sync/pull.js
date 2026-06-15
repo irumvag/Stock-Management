@@ -1,15 +1,16 @@
 import { sql } from '../_lib/db.js';
-import { requireAuth, cors } from '../_lib/auth.js';
+import { requireCompanyAuth, cors } from '../_lib/auth.js';
 import { SYNC_TABLES } from '../_lib/tables.js';
 
 // GET /api/sync/pull?since=<ISO timestamp>
-// Returns every row changed after `since`, grouped by table, plus the new
-// cursor (max updated_at seen). First sync uses since=epoch.
+// Returns every row changed after `since` within the caller's company,
+// grouped by table, plus the new cursor (max updated_at seen).
 export default async function handler(req, res) {
   if (cors(req, res)) return;
-  if (!requireAuth(req, res)) return;
+  const claims = requireCompanyAuth(req, res);
+  if (!claims) return;
+  const company_id = claims.company_id;
 
-  // Validate the `since` cursor — must be a parseable date.
   const rawSince = req.query.since || '1970-01-01T00:00:00.000Z';
   const sinceDate = new Date(rawSince);
   if (isNaN(sinceDate.getTime())) {
@@ -21,13 +22,11 @@ export default async function handler(req, res) {
   let cursor = since;
 
   for (const [name, def] of Object.entries(SYNC_TABLES)) {
-    // Use pullCols if defined (e.g. users strips password_hash); fall back to cols.
     const cols = (def.pullCols || def.cols).join(', ');
-    // table names are from our own whitelist, safe to interpolate.
-    // neon() HTTP driver uses sql(text, params) not sql.query().
+    // table names come from our own whitelist (SYNC_TABLES keys) — safe to interpolate.
     const rows = await sql(
-      `SELECT ${cols} FROM ${name} WHERE updated_at > $1 ORDER BY updated_at ASC`,
-      [since]
+      `SELECT ${cols} FROM ${name} WHERE updated_at > $1 AND company_id = $2 ORDER BY updated_at ASC`,
+      [since, company_id]
     );
     tables[name] = rows;
     for (const r of rows) {

@@ -40,12 +40,15 @@ function stopInactivityTracking() {
 // stock), sales, and the daily reconciliation report.
 const OWNER_VIEWS = ['dashboard', 'pos', 'products', 'sales', 'daily', 'reports', 'activity', 'users'];
 const CASHIER_VIEWS = ['pos', 'products', 'daily', 'sales'];
+const SUPER_ADMIN_VIEWS = ['companies'];
 
 function getAllowedViews() {
+  if (isSuperAdmin()) return SUPER_ADMIN_VIEWS;
   return isManager() ? OWNER_VIEWS : CASHIER_VIEWS;
 }
 
 function getDefaultView() {
+  if (isSuperAdmin()) return 'companies';
   return isManager() ? 'dashboard' : 'pos';
 }
 
@@ -68,6 +71,7 @@ loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   loginError.hidden = true;
 
+  const company  = document.getElementById('company-code').value.trim();
   const username = document.getElementById('username').value.trim();
   const password = document.getElementById('password').value;
 
@@ -76,7 +80,7 @@ loginForm.addEventListener('submit', async (e) => {
     return;
   }
 
-  const result = await window.api.login(username, password);
+  const result = await window.api.login(username, password, company || null);
 
   if (result.success) {
     currentUser = result.user;
@@ -106,6 +110,10 @@ logoutBtn.addEventListener('click', (e) => {
 
 // "Manager" kept as the function name for minimal churn; the Owner role is the
 // privileged role in Release 2 (legacy 'Manager' still recognised for old data).
+function isSuperAdmin() {
+  return currentUser && currentUser.role === 'SuperAdmin';
+}
+
 function isManager() {
   return currentUser && (currentUser.role === 'Owner' || currentUser.role === 'Manager');
 }
@@ -129,6 +137,10 @@ function showApp() {
     }
   });
 
+  // SuperAdmin has no company data to sync — hide the badge.
+  const syncBadge = document.getElementById('sync-badge');
+  if (syncBadge) syncBadge.style.display = isSuperAdmin() ? 'none' : '';
+
   const defaultView = getDefaultView();
   const activeLink = document.querySelector('#sidebar a.active');
   if (activeLink) activeLink.classList.remove('active');
@@ -146,7 +158,7 @@ function showLogin() {
   loginScreen.hidden = false;
   loginForm.reset();
   loginError.hidden = true;
-  document.getElementById('username').focus();
+  document.getElementById('company-code').focus();
 }
 
 // --- Navigation ---
@@ -197,6 +209,9 @@ async function loadView(view) {
       break;
     case 'users':
       await loadUsers(content);
+      break;
+    case 'companies':
+      await loadCompanies(content);
       break;
   }
 }
@@ -2612,6 +2627,133 @@ function debounce(fn, delay) {
     clearTimeout(timer);
     timer = setTimeout(() => fn.apply(this, args), delay);
   };
+}
+
+// =====================================================
+// COMPANIES (SuperAdmin only)
+// =====================================================
+
+async function loadCompanies(container) {
+  container.innerHTML = `<div class="view-header"><h1>Companies</h1><button class="btn-primary btn-sm" id="add-company-btn">+ New Company</button></div><p style="color:#64748b;font-size:13px;margin-bottom:16px;">Each company is a fully isolated tenant. Create one per bar/shop, then give the owner their company code to log in.</p><div id="companies-list"><div class="empty-state">Loading…</div></div><div id="company-form-section" hidden></div>`;
+
+  async function renderList() {
+    const listEl = document.getElementById('companies-list');
+    if (!listEl) return;
+    const companies = await window.api.getCompanies();
+    if (!companies.length) {
+      listEl.innerHTML = '<div class="empty-state">No companies yet. Click "+ New Company" to create one.</div>';
+      return;
+    }
+    listEl.innerHTML = `
+      <table>
+        <thead><tr><th>Company Name</th><th>Code</th><th>Status</th><th>Users</th><th>Created</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${companies.map((c) => `
+            <tr>
+              <td><strong>${escapeHtml(c.name)}</strong></td>
+              <td><code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:13px;">${escapeHtml(c.slug)}</code></td>
+              <td><span class="role-badge ${c.active ? 'role-owner' : 'role-inactive'}">${c.active ? 'Active' : 'Inactive'}</span></td>
+              <td>${c.user_count ?? 0}</td>
+              <td>${c.created_at ? parseDbDate(c.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}</td>
+              <td class="actions-cell">
+                <button class="btn-icon btn-edit" data-company-edit="${escapeHtml(c.uuid)}" data-company-name="${escapeHtml(c.name)}" data-company-active="${c.active ? '1' : '0'}" title="Edit">&#9998;</button>
+                <button class="btn-icon" data-company-toggle="${escapeHtml(c.uuid)}" data-company-active="${c.active ? '1' : '0'}" title="${c.active ? 'Deactivate' : 'Activate'}">${c.active ? '&#9940;' : '&#9989;'}</button>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+
+    container.querySelectorAll('[data-company-toggle]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const uuid = btn.dataset.companyToggle;
+        const isActive = btn.dataset.companyActive === '1';
+        const result = await window.api.updateCompany(uuid, { active: !isActive });
+        if (result.success) await renderList();
+        else alert(result.error || 'Failed to update.');
+      });
+    });
+
+    container.querySelectorAll('[data-company-edit]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        showCompanyForm({ uuid: btn.dataset.companyEdit, name: btn.dataset.companyName });
+      });
+    });
+  }
+
+  function showCompanyForm(existing) {
+    const formEl = document.getElementById('company-form-section');
+    if (!formEl) return;
+    const isEdit = !!existing;
+    formEl.hidden = false;
+    formEl.innerHTML = `
+      <div style="background:#fff;border-radius:10px;padding:24px;margin-top:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+        <h3 style="margin-bottom:16px;">${isEdit ? 'Edit Company' : 'New Company'}</h3>
+        <form id="company-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="cf-name">Company Name</label>
+              <input type="text" id="cf-name" required placeholder="e.g. Club TMP" value="${isEdit ? escapeHtml(existing.name) : ''}">
+            </div>
+            ${!isEdit ? `
+            <div class="form-group">
+              <label for="cf-slug">Company Code <span style="color:#94a3b8;font-size:12px;">(login code — lowercase, no spaces)</span></label>
+              <input type="text" id="cf-slug" required placeholder="e.g. clubtmp" pattern="[a-z0-9-]+" title="Lowercase letters, numbers, and hyphens only">
+            </div>` : ''}
+          </div>
+          ${!isEdit ? `
+          <div class="form-row">
+            <div class="form-group">
+              <label for="cf-owner-username">Owner Username</label>
+              <input type="text" id="cf-owner-username" required placeholder="e.g. admin">
+            </div>
+            <div class="form-group">
+              <label for="cf-owner-password">Owner Password</label>
+              <input type="password" id="cf-owner-password" required placeholder="Minimum 4 characters" minlength="4">
+            </div>
+          </div>` : ''}
+          <div id="company-form-error" class="error-message" hidden></div>
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" id="cf-cancel">Cancel</button>
+            <button type="submit" class="btn-primary">${isEdit ? 'Save Changes' : 'Create Company'}</button>
+          </div>
+        </form>
+      </div>`;
+
+    document.getElementById('cf-cancel').addEventListener('click', () => {
+      formEl.hidden = true;
+      formEl.innerHTML = '';
+    });
+
+    document.getElementById('company-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl = document.getElementById('company-form-error');
+      errEl.hidden = true;
+      const name = document.getElementById('cf-name').value.trim();
+
+      let result;
+      if (isEdit) {
+        result = await window.api.updateCompany(existing.uuid, { name });
+      } else {
+        const slug = document.getElementById('cf-slug').value.trim().toLowerCase();
+        const ownerUsername = document.getElementById('cf-owner-username').value.trim();
+        const ownerPassword = document.getElementById('cf-owner-password').value;
+        result = await window.api.createCompany({ name, slug, ownerUsername, ownerPassword });
+      }
+
+      if (result.success) {
+        formEl.hidden = true;
+        formEl.innerHTML = '';
+        await renderList();
+      } else {
+        errEl.textContent = result.error || 'Failed. Try again.';
+        errEl.hidden = false;
+      }
+    });
+  }
+
+  document.getElementById('add-company-btn').addEventListener('click', () => showCompanyForm(null));
+
+  await renderList();
 }
 
 // =====================================================

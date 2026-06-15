@@ -4,7 +4,7 @@
 // sync.js. Reports are computed locally from synced data. No buying price / no
 // profit anywhere — only selling price and what went OUT.
 import bcrypt from 'bcryptjs';
-import { db, uuid, nowIso, enqueue } from './db.js';
+import { db, uuid, nowIso, enqueue, getMeta, setMeta } from './db.js';
 import { apiFetch, setToken, notifyMutation, syncNow } from './sync.js';
 
 const active = (rows) => rows.filter((r) => !r.deleted);
@@ -17,13 +17,11 @@ async function persist(table, row) {
 }
 
 // ---------- Activity log (audit trail) ----------
-// app.js calls setActor() at login so each logged action records who did it.
 let currentActor = { username: 'unknown', role: '' };
 function setActor(user) {
   if (user) currentActor = { username: user.username, role: user.role };
 }
 
-// Append an immutable activity record (synced like any other table).
 async function logActivity(action, details = '') {
   const row = {
     uuid: uuid(), at: nowIso(), username: currentActor.username,
@@ -31,7 +29,6 @@ async function logActivity(action, details = '') {
   };
   await db.activity_log.add(row);
   await enqueue('activity_log', { ...row });
-  // no notifyMutation(): logging shouldn't itself flip the badge to "pending"
 }
 
 async function getActivityLog(limit = 200) {
@@ -41,35 +38,58 @@ async function getActivityLog(limit = 200) {
 
 // ---------- Auth ----------
 
-async function login(username, password) {
-  // Prefer online: authoritative + caches users for later offline login.
+// Wipe all company-scoped local data (called when switching companies).
+async function clearCompanyData() {
+  await Promise.all([
+    db.products.clear(), db.sales.clear(), db.waiters.clear(),
+    db.drafts.clear(), db.daily_snapshots.clear(), db.expenses.clear(),
+    db.activity_log.clear(), db.outbox.clear(),
+  ]);
+  await setMeta('cursor', null);
+}
+
+async function login(username, password, company) {
+  // Prefer online: authoritative + caches data for later offline use.
   if (navigator.onLine) {
     try {
       const res = await apiFetch('/api/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, ...(company ? { company } : {}) }),
       });
       const data = await res.json();
       if (data.success) {
+        // If switching to a different company, clear old local data first.
+        const prevCompanyId = await getMeta('company_id');
+        const newCompanyId = data.user.company_id || null;
+        if (prevCompanyId && prevCompanyId !== newCompanyId) {
+          await clearCompanyData();
+        }
         await setToken(data.token);
-        await syncNow(); // pull users + data into Dexie
+        await setMeta('company_id', newCompanyId);
+        // SuperAdmin has no company data to sync.
+        if (newCompanyId) {
+          await syncNow();
+        }
         return { success: true, user: data.user };
       }
-      return { success: false, error: data.error || 'Invalid username or password' };
+      return { success: false, error: data.error || 'Invalid credentials' };
     } catch {
       /* fall through to offline path */
     }
   }
-  // Offline: verify against cached hash.
-  const u = (await db.users.where('username').equals(username).first());
-  if (!u || u.deleted || !bcrypt.compareSync(password, u.password_hash)) {
+  // Offline fallback — only company users (SuperAdmin always needs internet).
+  if (!company) {
+    return { success: false, error: 'System admin login requires an internet connection.' };
+  }
+  const u = await db.users.where('username').equals(username).first();
+  if (!u || u.deleted || !bcrypt.compareSync(password, u.password_hash || '')) {
     return { success: false, error: 'Invalid username or password (offline)' };
   }
-  return { success: true, user: { uuid: u.uuid, username: u.username, role: u.role } };
+  const company_id = await getMeta('company_id');
+  return { success: true, user: { uuid: u.uuid, username: u.username, role: u.role, company_id } };
 }
 
-// User management is online-only (touches credentials). Cashier devices receive
-// changes on their next sync.
+// User management is online-only (touches credentials).
 async function getUsers() {
   if (navigator.onLine) {
     try {
@@ -134,6 +154,51 @@ async function deleteUser(uuid) {
     return out;
   } catch {
     return { success: false, error: 'Cannot reach server. Connect to the internet and try again.' };
+  }
+}
+
+// ---------- Company management (SuperAdmin only) ----------
+
+async function getCompanies() {
+  try {
+    const res = await apiFetch('/api/companies');
+    if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+      return res.json();
+    }
+  } catch {}
+  return [];
+}
+async function createCompany(data) {
+  try {
+    const res = await apiFetch('/api/companies', { method: 'POST', body: JSON.stringify(data) });
+    if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) {
+      return { success: false, error: 'Cannot reach server.' };
+    }
+    return res.json();
+  } catch {
+    return { success: false, error: 'Cannot reach server.' };
+  }
+}
+async function updateCompany(uuid, data) {
+  try {
+    const res = await apiFetch('/api/companies', { method: 'PUT', body: JSON.stringify({ uuid, ...data }) });
+    if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) {
+      return { success: false, error: 'Cannot reach server.' };
+    }
+    return res.json();
+  } catch {
+    return { success: false, error: 'Cannot reach server.' };
+  }
+}
+async function deleteCompany(uuid) {
+  try {
+    const res = await apiFetch('/api/companies', { method: 'DELETE', body: JSON.stringify({ uuid }) });
+    if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) {
+      return { success: false, error: 'Cannot reach server.' };
+    }
+    return res.json();
+  } catch {
+    return { success: false, error: 'Cannot reach server.' };
   }
 }
 
@@ -353,7 +418,6 @@ async function completeDraft(draftId, paymentMethod) {
   const draft = await db.drafts.get(draftId);
   if (!draft || draft.status !== 'open') return { success: false, error: 'Draft not found or already completed' };
   if (draft.items.length === 0) return { success: false, error: 'Draft has no items' };
-  // Stock already deducted when items were added — record sale directly.
   const enriched = draft.items.map((i) => ({
     product_uuid: i.product_uuid, product_id: i.product_id, product_name: i.product_name,
     size_unit: i.size_unit, unit_price: i.unit_price, quantity: i.quantity, subtotal: i.subtotal,
@@ -385,7 +449,7 @@ async function deleteDraft(id) {
   return { success: true };
 }
 
-// ---------- Expenses & daily snapshots (new for Release 2) ----------
+// ---------- Expenses & daily snapshots ----------
 
 async function getExpenses(date) {
   return (await db.expenses.toArray()).filter((e) => !e.deleted && e.expense_date === date);
@@ -408,7 +472,6 @@ async function deleteExpense(id) {
   return { success: true };
 }
 
-// Capture today's opening stock from current stock (call once at day start).
 async function captureOpeningStock(date) {
   const products = await getProducts();
   for (const p of products) {
@@ -427,7 +490,6 @@ async function captureOpeningStock(date) {
   return { success: true };
 }
 
-// Daily reconciliation report (matches the handwritten sheet).
 async function getDailyStockReport(date) {
   const products = await getProducts();
   const snaps = (await db.daily_snapshots.toArray()).filter((s) => s.snapshot_date === date && !s.deleted);
@@ -445,7 +507,6 @@ async function getDailyStockReport(date) {
     };
   });
 
-  // Payment breakdown from the day's (non-refunded) sales.
   const sales = (await getSales()).filter((s) => !s.refunded && localDate(s.sale_date) === date);
   const payments = {};
   let totalOut = 0;
@@ -465,7 +526,7 @@ async function getDailyStockReport(date) {
   };
 }
 
-// ---------- Reports (no cost/profit — "what went out") ----------
+// ---------- Reports ----------
 
 async function salesInRange(start, end) {
   return (await getSales()).filter((s) => {
@@ -532,7 +593,6 @@ async function getWaiterDailyReport(date) {
   };
 }
 
-// How much money a single cashier collected on a given day (their "takings").
 async function getCashierTakings(date, cashier) {
   const sales = (await getSales()).filter((s) => !s.refunded && localDate(s.sale_date) === date && (s.cashier || '') === cashier);
   const payments = {};
@@ -545,7 +605,6 @@ async function getCashierTakings(date, cashier) {
   return { date, cashier, salesCount: sales.length, itemsCount, totalCollected, payments };
 }
 
-// Per-cashier takings for a day (owner oversight) — who collected how much.
 async function getCashiersDaily(date) {
   const sales = (await getSales()).filter((s) => !s.refunded && localDate(s.sale_date) === date);
   const map = {};
@@ -603,7 +662,9 @@ function printHtml(html) {
 
 export const api = {
   setActor, logActivity, getActivityLog,
-  login, getUsers, createUser, changePassword, updateUser, resetPassword, deleteUser,
+  login,
+  getUsers, createUser, changePassword, updateUser, resetPassword, deleteUser,
+  getCompanies, createCompany, updateCompany, deleteCompany,
   getProducts, getProduct, getProductsByCategory, searchProducts, getCategories, getLowStockProducts,
   createProduct, updateProduct, deleteProduct,
   getWaiters, getActiveWaiters, createWaiter, updateWaiter, toggleWaiter, deleteWaiter,
@@ -613,7 +674,6 @@ export const api = {
   getExpenses, createExpense, deleteExpense, captureOpeningStock, getDailyStockReport,
   getSalesReport, getMonthlySummary, getWaiterDailyReport, getInventoryValueReport,
   getCashierTakings, getCashiersDaily,
-  // Printing: in the browser, "Save as PDF" is the print dialog's destination.
   printReceipt: (html) => printHtml(html),
   saveReceiptPdf: (html) => printHtml(html),
   saveReportPdf: (html) => printHtml(html),
