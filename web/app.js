@@ -2290,7 +2290,7 @@ async function loadUsers(container) {
               <td>${w.created_at ? parseDbDate(w.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}</td>
               <td class="actions-cell">
                 <button class="btn-icon btn-edit" data-waiter-edit="${w.id}" data-waiter-name="${escapeHtml(w.name)}" title="Rename">&#9998;</button>
-                <button class="btn-icon" data-waiter-toggle="${w.id}" data-waiter-active="${w.active}" title="${w.active ? 'Deactivate' : 'Activate'}">${w.active ? '&#9940;' : '&#9989;'}</button>
+                <button class="btn-icon" data-waiter-toggle="${w.id}" data-waiter-active="${w.active ? '1' : '0'}" title="${w.active ? 'Deactivate' : 'Activate'}">${w.active ? '&#9940;' : '&#9989;'}</button>
                 <button class="btn-icon btn-delete" data-waiter-del="${w.id}" data-waiter-name="${escapeHtml(w.name)}" title="Delete">&#128465;</button>
               </td>
             </tr>`).join('')}
@@ -2387,9 +2387,16 @@ async function loadUsers(container) {
 
     if (id) {
       // Editing existing user
-      const result = await window.api.updateUser(id, { username, role });
+      let result;
+      try {
+        result = await window.api.updateUser(id, { username, role });
+      } catch (err) {
+        errEl.textContent = 'Unexpected error. Please try again.';
+        errEl.hidden = false;
+        return;
+      }
       if (!result.success) {
-        errEl.textContent = result.error;
+        errEl.textContent = result.error || 'Failed to update user.';
         errEl.hidden = false;
         return;
       }
@@ -2489,20 +2496,28 @@ async function loadUsers(container) {
   // Toggle active/inactive
   container.querySelectorAll('[data-waiter-toggle]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const id = Number(btn.dataset.waiterToggle);
-      const isActive = btn.dataset.waiterActive === '1';
-      await window.api.toggleWaiter(id, !isActive);
-      loadUsers(container);
+      try {
+        const id = Number(btn.dataset.waiterToggle);
+        const isActive = btn.dataset.waiterActive === '1';
+        await window.api.toggleWaiter(id, !isActive);
+        await loadUsers(container);
+      } catch (err) {
+        console.error('Toggle waiter failed', err);
+      }
     });
   });
 
   // Delete waiter
   container.querySelectorAll('[data-waiter-del]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const name = btn.dataset.waiterName;
-      if (!confirm(`Delete waiter "${name}"?`)) return;
-      await window.api.deleteWaiter(Number(btn.dataset.waiterDel));
-      loadUsers(container);
+      try {
+        const name = btn.dataset.waiterName;
+        if (!confirm(`Delete waiter "${name}"?`)) return;
+        await window.api.deleteWaiter(Number(btn.dataset.waiterDel));
+        await loadUsers(container);
+      } catch (err) {
+        console.error('Delete waiter failed', err);
+      }
     });
   });
 

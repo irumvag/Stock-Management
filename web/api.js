@@ -72,35 +72,69 @@ async function login(username, password) {
 // changes on their next sync.
 async function getUsers() {
   if (navigator.onLine) {
-    const res = await apiFetch('/api/users');
-    if (res.ok) return res.json();
+    try {
+      const res = await apiFetch('/api/users');
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+        return res.json();
+      }
+    } catch {}
   }
   return active(await db.users.toArray()).map((u) => ({ uuid: u.uuid, username: u.username, role: u.role }));
 }
 async function createUser(user) {
-  const res = await apiFetch('/api/users', { method: 'POST', body: JSON.stringify(user) });
-  const data = await res.json();
-  if (data.success) syncNow();
-  return data;
+  try {
+    const res = await apiFetch('/api/users', { method: 'POST', body: JSON.stringify(user) });
+    if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) {
+      return { success: false, error: 'Cannot reach server. Connect to the internet and try again.' };
+    }
+    const data = await res.json();
+    if (data.success) syncNow();
+    return data;
+  } catch {
+    return { success: false, error: 'Cannot reach server. Connect to the internet and try again.' };
+  }
 }
 async function updateUser(uuid, data) {
-  const res = await apiFetch('/api/users', { method: 'PUT', body: JSON.stringify({ uuid, ...data }) });
-  const out = await res.json();
-  if (out.success) syncNow();
-  return out;
+  try {
+    const res = await apiFetch('/api/users', { method: 'PUT', body: JSON.stringify({ uuid, ...data }) });
+    if (!res.ok) {
+      let msg = 'Server error. Try again.';
+      try { const j = await res.json(); msg = j.error || msg; } catch {}
+      return { success: false, error: msg };
+    }
+    const out = await res.json();
+    if (out.success) syncNow();
+    return out;
+  } catch {
+    return { success: false, error: 'Cannot reach server. Connect to the internet and try again.' };
+  }
 }
 async function resetPassword(uuid, newPassword) {
-  const res = await apiFetch('/api/users', { method: 'PUT', body: JSON.stringify({ uuid, newPassword }) });
-  return res.json();
+  try {
+    const res = await apiFetch('/api/users', { method: 'PUT', body: JSON.stringify({ uuid, newPassword }) });
+    if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) {
+      return { success: false, error: 'Cannot reach server. Connect to the internet and try again.' };
+    }
+    return res.json();
+  } catch {
+    return { success: false, error: 'Cannot reach server. Connect to the internet and try again.' };
+  }
 }
 async function changePassword(uuid, _current, newPassword) {
   return resetPassword(uuid, newPassword);
 }
 async function deleteUser(uuid) {
-  const res = await apiFetch('/api/users', { method: 'DELETE', body: JSON.stringify({ uuid }) });
-  const out = await res.json();
-  if (out.success) syncNow();
-  return out;
+  try {
+    const res = await apiFetch('/api/users', { method: 'DELETE', body: JSON.stringify({ uuid }) });
+    if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) {
+      return { success: false, error: 'Cannot reach server. Connect to the internet and try again.' };
+    }
+    const out = await res.json();
+    if (out.success) syncNow();
+    return out;
+  } catch {
+    return { success: false, error: 'Cannot reach server. Connect to the internet and try again.' };
+  }
 }
 
 // ---------- Products ----------
