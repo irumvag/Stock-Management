@@ -17,10 +17,11 @@ if (!url) {
   process.exit(1);
 }
 
+// neon() returns a tagged-template function that also supports sql('stmt')
+// calling style — works over HTTPS without WebSockets, suitable for scripts.
 const sql = neon(url);
 
-// The Neon HTTP driver runs one statement per call. Strip line comments and
-// split on semicolons (our SQL uses no functions/dollar-quoting).
+// Strip line comments and split on semicolons (migrations use no dollar-quoting).
 function statements(text) {
   return text
     .split('\n')
@@ -34,7 +35,7 @@ function statements(text) {
 async function applyFile(path, label) {
   console.log(`Applying ${label}`);
   for (const stmt of statements(readFileSync(path, 'utf8'))) {
-    await sql.query(stmt);
+    await sql(stmt);
   }
 }
 
@@ -53,6 +54,6 @@ async function run() {
 }
 
 run().catch((err) => {
-  console.error('Migration failed:', err);
+  console.error('Migration failed:', err.message || err);
   process.exit(1);
 });
