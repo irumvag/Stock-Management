@@ -6,6 +6,9 @@ let deleteTargetId = null;
 let cart = [];
 let allProductsCache = [];
 
+// Waiter auto-refresh timer (cleared on logout / view change)
+let waiterRefreshTimer = null;
+
 // --- Inactivity Auto-Logout ---
 const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 let inactivityTimer = null;
@@ -38,14 +41,21 @@ function stopInactivityTracking() {
 // history, and user management. The Cashier runs day-to-day operations and does
 // everything hands-on: POS, full inventory management (add products / update
 // stock), sales, and the daily reconciliation report.
-const OWNER_VIEWS = ['dashboard', 'pos', 'products', 'sales', 'daily', 'reports', 'activity', 'users'];
-const CASHIER_VIEWS = ['pos', 'products', 'daily', 'sales'];
+const OWNER_VIEWS   = ['dashboard', 'pos', 'products', 'sales', 'daily', 'reports', 'analytics', 'activity', 'users'];
+const CASHIER_VIEWS = ['pos', 'products', 'daily', 'sales', 'analytics'];
+const WAITER_VIEWS  = ['waiter'];
+
+function isWaiter() {
+  return currentUser && currentUser.role === 'Waiter';
+}
 
 function getAllowedViews() {
+  if (isWaiter()) return WAITER_VIEWS;
   return isManager() ? OWNER_VIEWS : CASHIER_VIEWS;
 }
 
 function getDefaultView() {
+  if (isWaiter()) return 'waiter';
   return isManager() ? 'dashboard' : 'pos';
 }
 
@@ -129,6 +139,13 @@ function showApp() {
     }
   });
 
+  // Waiter mode: full-screen mobile layout, no sidebar
+  if (isWaiter()) {
+    appContainer.classList.add('waiter-mode');
+  } else {
+    appContainer.classList.remove('waiter-mode');
+  }
+
   const defaultView = getDefaultView();
   const activeLink = document.querySelector('#sidebar a.active');
   if (activeLink) activeLink.classList.remove('active');
@@ -142,7 +159,9 @@ function showApp() {
 
 function showLogin() {
   stopInactivityTracking();
+  clearInterval(waiterRefreshTimer);
   appContainer.hidden = true;
+  appContainer.classList.remove('waiter-mode');
   loginScreen.hidden = false;
   loginForm.reset();
   loginError.hidden = true;
@@ -172,32 +191,21 @@ async function loadView(view) {
     if (link) link.classList.add('active');
   }
 
+  // Stop waiter auto-refresh when leaving the waiter view
+  clearInterval(waiterRefreshTimer);
+
   const content = document.getElementById('content');
   switch (view) {
-    case 'dashboard':
-      await loadDashboard(content);
-      break;
-    case 'pos':
-      await loadPOS(content);
-      break;
-    case 'products':
-      await loadInventory(content);
-      break;
-    case 'sales':
-      await loadSalesHistory(content);
-      break;
-    case 'daily':
-      await loadDailyStockReport(content);
-      break;
-    case 'reports':
-      await loadReports(content);
-      break;
-    case 'activity':
-      await loadActivity(content);
-      break;
-    case 'users':
-      await loadUsers(content);
-      break;
+    case 'dashboard':  await loadDashboard(content);        break;
+    case 'pos':        await loadPOS(content);              break;
+    case 'products':   await loadInventory(content);        break;
+    case 'sales':      await loadSalesHistory(content);     break;
+    case 'daily':      await loadDailyStockReport(content); break;
+    case 'reports':    await loadReports(content);          break;
+    case 'analytics':  await loadAnalytics(content);        break;
+    case 'activity':   await loadActivity(content);         break;
+    case 'users':      await loadUsers(content);            break;
+    case 'waiter':     await loadWaiterView(content);       break;
   }
 }
 
@@ -2168,6 +2176,280 @@ document.getElementById('delete-confirm-btn').addEventListener('click', async ()
 });
 
 // =====================================================
+// WAITER MOBILE VIEW
+// =====================================================
+
+async function loadWaiterView(container) {
+  const waiterName = currentUser.username;
+  const today = new Date().toLocaleDateString('en-CA');
+
+  const [myTables, summary] = await Promise.all([
+    window.api.getMyTables(waiterName),
+    window.api.getWaiterDailySummary(waiterName, today),
+  ]);
+
+  container.innerHTML = `
+    <div class="waiter-app">
+      <div class="waiter-header">
+        <div>
+          <div class="waiter-header-name">${escapeHtml(waiterName)}</div>
+          <div class="waiter-header-date">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+        </div>
+        <div class="waiter-header-actions">
+          <button class="waiter-action-btn" id="waiter-refresh-btn">&#8635; Refresh</button>
+          <button class="waiter-action-btn waiter-signout" id="waiter-signout-btn">Sign Out</button>
+        </div>
+      </div>
+
+      <div class="waiter-summary-strip">
+        <div class="waiter-stat">
+          <div class="waiter-stat-value">${myTables.length}</div>
+          <div class="waiter-stat-label">Open Tables</div>
+        </div>
+        <div class="waiter-stat">
+          <div class="waiter-stat-value">${summary.tablesServed}</div>
+          <div class="waiter-stat-label">Served Today</div>
+        </div>
+        <div class="waiter-stat">
+          <div class="waiter-stat-value">${fmtCurrency(summary.totalOut)}</div>
+          <div class="waiter-stat-label">Today's Total</div>
+        </div>
+      </div>
+
+      <div class="waiter-section">
+        <h2 class="waiter-section-title">Open Tables (${myTables.length})</h2>
+        ${myTables.length === 0
+          ? '<div class="waiter-empty">No open tables assigned to you right now.</div>'
+          : myTables.map((d) => renderWaiterDraftCard(d)).join('')}
+      </div>
+
+      ${summary.sales.length > 0 ? `
+        <div class="waiter-section">
+          <h2 class="waiter-section-title">Completed Today (${summary.tablesServed})</h2>
+          ${summary.sales.map((s) => renderWaiterCompletedCard(s)).join('')}
+        </div>` : ''}
+    </div>`;
+
+  document.getElementById('waiter-refresh-btn').addEventListener('click', () => loadWaiterView(container));
+  document.getElementById('waiter-signout-btn').addEventListener('click', () => {
+    currentUser = null; cart = [];
+    clearInterval(waiterRefreshTimer);
+    showLogin();
+  });
+
+  // Expand / collapse item list per card
+  container.querySelectorAll('.waiter-items-toggle').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const list = btn.previousElementSibling;
+      const open = list.hidden;
+      list.hidden = !open;
+      btn.textContent = open ? '▲ Hide items' : '▼ View items';
+    });
+  });
+
+  // Auto-refresh every 30 s so waiters see new items without manual refresh
+  clearInterval(waiterRefreshTimer);
+  waiterRefreshTimer = setInterval(() => loadWaiterView(container), 30000);
+}
+
+function renderWaiterDraftCard(draft) {
+  const itemCount = draft.items.reduce((s, i) => s + Number(i.quantity), 0);
+  return `
+    <div class="waiter-table-card waiter-card-open">
+      <div class="waiter-card-row">
+        <div class="waiter-card-table">🍽 ${escapeHtml(draft.table_number)}</div>
+        <div class="waiter-card-time">${getTimeAgo(draft.updated_at)}</div>
+      </div>
+      ${draft.customer_name ? `<div class="waiter-card-customer">Customer: ${escapeHtml(draft.customer_name)}</div>` : ''}
+      <div class="waiter-card-row" style="margin-top:8px;">
+        <div class="waiter-card-meta">${itemCount} item${itemCount !== 1 ? 's' : ''}</div>
+        <div class="waiter-card-total">${fmtCurrency(draft.total_amount)}</div>
+      </div>
+      <div class="waiter-items-list" hidden>
+        ${draft.items.map((i) => `
+          <div class="waiter-item-row">
+            <span class="waiter-item-name">${escapeHtml(i.product_name)} <small class="waiter-item-size">${escapeHtml(i.size_unit || '')}</small></span>
+            <span class="waiter-item-qty">×${i.quantity}</span>
+            <span class="waiter-item-sub">${fmtCurrency(Number(i.subtotal))}</span>
+          </div>`).join('')}
+        <div class="waiter-items-footer">Total: <strong>${fmtCurrency(draft.total_amount)}</strong></div>
+      </div>
+      <button class="waiter-items-toggle">▼ View items</button>
+    </div>`;
+}
+
+function renderWaiterCompletedCard(sale) {
+  const { time } = formatReceiptDate(sale.sale_date);
+  const itemCount = sale.products.reduce((s, i) => s + Number(i.quantity), 0);
+  return `
+    <div class="waiter-table-card waiter-card-done">
+      <div class="waiter-card-row">
+        <div class="waiter-card-table">✓ Table served</div>
+        <div class="waiter-card-time">${time}</div>
+      </div>
+      ${sale.customer_name ? `<div class="waiter-card-customer">Customer: ${escapeHtml(sale.customer_name)}</div>` : ''}
+      <div class="waiter-card-row" style="margin-top:6px;">
+        <div class="waiter-card-meta">${itemCount} item${itemCount !== 1 ? 's' : ''} · ${escapeHtml(sale.payment_method)}</div>
+        <div class="waiter-card-total">${fmtCurrency(Number(sale.total_amount))}</div>
+      </div>
+    </div>`;
+}
+
+// =====================================================
+// ANALYTICS
+// =====================================================
+
+async function loadAnalytics(container) {
+  const today = new Date().toLocaleDateString('en-CA');
+  const dateLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  // Build last-7-days date range
+  const last7 = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    last7.push(d.toLocaleDateString('en-CA'));
+  }
+
+  if (isManager()) {
+    // ── Owner: full staff dashboard ──
+    const [staff, waiterReport, salesReport] = await Promise.all([
+      window.api.getCashiersDaily(today),
+      window.api.getWaiterDailyReport(today),
+      window.api.getSalesReport(last7[0], last7[last7.length - 1]),
+    ]);
+
+    // Weekly revenue chart data
+    const byDay = Object.fromEntries(last7.map((d) => [d, 0]));
+    for (const s of salesReport.sales) {
+      const k = new Date(s.sale_date).toLocaleDateString('en-CA');
+      if (k in byDay) byDay[k] += Number(s.total_amount);
+    }
+    const weekBars = last7.map((d) => ({
+      label: new Date(d).toLocaleDateString('en-GB', { weekday: 'short' }),
+      value: byDay[d],
+    }));
+    const weekTotal = last7.reduce((s, d) => s + byDay[d], 0);
+
+    container.innerHTML = `
+      <div class="view-header"><h1>Analytics</h1></div>
+
+      <h2 style="margin-bottom:16px;">Today — ${dateLabel}</h2>
+
+      <h3 class="analytics-sub">Cashier Takings</h3>
+      ${staff.length === 0
+        ? '<div class="empty-state" style="margin-bottom:20px;">No sales recorded today.</div>'
+        : `<div class="stats-grid" style="margin-bottom:24px;">
+            ${staff.map((c) => `
+              <div class="stat-card">
+                <div class="stat-value">${fmtCurrency(c.totalCollected)}</div>
+                <div class="stat-label">${escapeHtml(c.cashier)}</div>
+                <div class="analytics-sub-stat">${c.salesCount} sale${c.salesCount !== 1 ? 's' : ''} · ${c.itemsCount} items</div>
+              </div>`).join('')}
+          </div>`}
+
+      <h3 class="analytics-sub">Waiter Tables Served</h3>
+      ${waiterReport.waiters.length === 0
+        ? '<div class="empty-state" style="margin-bottom:20px;">No sales recorded today.</div>'
+        : `<div class="table-wrap" style="margin-bottom:24px;">
+            <table>
+              <thead><tr><th>Waiter</th><th>Tables</th><th>Items</th><th>Amount</th></tr></thead>
+              <tbody>
+                ${waiterReport.waiters.map((w) => `
+                  <tr>
+                    <td><strong>${escapeHtml(w.waiter_name)}</strong></td>
+                    <td>${w.totalSales}</td>
+                    <td>${w.totalItems}</td>
+                    <td>${fmtCurrency(w.totalOut)}</td>
+                  </tr>`).join('')}
+              </tbody>
+              <tfoot><tr>
+                <th>Total</th>
+                <th>${waiterReport.grandTotalSales}</th>
+                <th>${waiterReport.grandTotalItems}</th>
+                <th>${fmtCurrency(waiterReport.grandTotalOut)}</th>
+              </tr></tfoot>
+            </table>
+          </div>`}
+
+      <h3 class="analytics-sub">Revenue — Last 7 Days <span class="analytics-total-tag">${fmtCurrency(weekTotal)}</span></h3>
+      <div style="margin-bottom:24px;">${renderVBars(weekBars)}</div>
+
+      <h3 class="analytics-sub">Top Products — Last 7 Days</h3>
+      ${salesReport.bestSellers.length === 0
+        ? '<div class="empty-state">No sales in the last 7 days.</div>'
+        : renderHBars(salesReport.bestSellers.slice(0, 8).map((p) => ({ label: p.product_name, value: p.total_qty })), '#3b82f6', false)}`;
+
+  } else {
+    // ── Cashier: personal performance ──
+    const cashierName = currentUser.username;
+    const [takingsToday, salesReport] = await Promise.all([
+      window.api.getCashierTakings(today, cashierName),
+      window.api.getSalesReport(last7[0], last7[last7.length - 1]),
+    ]);
+
+    // Filter to my sales only
+    const mySales = salesReport.sales.filter((s) => (s.cashier || '') === cashierName);
+    const myTotal = mySales.reduce((s, sale) => s + Number(sale.total_amount), 0);
+    const myItems = mySales.reduce((s, sale) => sale.products.reduce((ss, i) => ss + Number(i.quantity), ss), 0);
+
+    // My weekly chart
+    const myByDay = Object.fromEntries(last7.map((d) => [d, 0]));
+    for (const s of mySales) {
+      const k = new Date(s.sale_date).toLocaleDateString('en-CA');
+      if (k in myByDay) myByDay[k] += Number(s.total_amount);
+    }
+    const weekBars = last7.map((d) => ({
+      label: new Date(d).toLocaleDateString('en-GB', { weekday: 'short' }),
+      value: myByDay[d],
+    }));
+
+    // My top products
+    const prodMap = {};
+    for (const s of mySales) {
+      for (const item of s.products) {
+        const key = item.product_uuid || item.product_name;
+        if (!prodMap[key]) prodMap[key] = { label: item.product_name, value: 0 };
+        prodMap[key].value += Number(item.quantity);
+      }
+    }
+    const topProducts = Object.values(prodMap).sort((a, b) => b.value - a.value).slice(0, 8);
+
+    container.innerHTML = `
+      <div class="view-header"><h1>My Analytics</h1></div>
+
+      <h2 style="margin-bottom:16px;">Today — ${dateLabel}</h2>
+      <div class="stats-grid" style="margin-bottom:24px;">
+        <div class="stat-card">
+          <div class="stat-value">${fmtCurrency(takingsToday.totalCollected)}</div>
+          <div class="stat-label">Collected Today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">${takingsToday.salesCount}</div>
+          <div class="stat-label">Sales Today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">${takingsToday.itemsCount}</div>
+          <div class="stat-label">Items Sold</div>
+        </div>
+        ${Object.entries(takingsToday.payments).map(([m, a]) => `
+          <div class="stat-card">
+            <div class="stat-value">${fmtCurrency(a)}</div>
+            <div class="stat-label">${escapeHtml(m)}</div>
+          </div>`).join('')}
+      </div>
+
+      <h3 class="analytics-sub">My Revenue — Last 7 Days <span class="analytics-total-tag">${fmtCurrency(myTotal)}</span></h3>
+      <div class="analytics-sub-stat" style="margin-bottom:8px;">${mySales.length} sale${mySales.length !== 1 ? 's' : ''} · ${myItems} items</div>
+      <div style="margin-bottom:24px;">${renderVBars(weekBars)}</div>
+
+      <h3 class="analytics-sub">My Top Products — Last 7 Days</h3>
+      ${topProducts.length === 0
+        ? '<div class="empty-state">No sales in the last 7 days.</div>'
+        : renderHBars(topProducts, '#10b981', false)}`;
+  }
+}
+
+// =====================================================
 // USER MANAGEMENT (Manager only)
 // =====================================================
 
@@ -2181,7 +2463,7 @@ async function loadUsers(container) {
       <h1>System Users</h1>
       <button class="btn-primary btn-sm" id="add-user-btn">+ Add Login User</button>
     </div>
-    <p style="color:#64748b;font-size:13px;margin-bottom:12px;">Login accounts (Owner / Cashier) for access to the system.</p>
+    <p style="color:#64748b;font-size:13px;margin-bottom:12px;">Login accounts for system access. <strong>Waiter tip:</strong> the username must exactly match the waiter's name in the Waiters list so their tables appear in their mobile view.</p>
     <table>
       <thead>
         <tr><th>Username</th><th>Role</th><th>Created</th><th>Actions</th></tr>
@@ -2216,6 +2498,7 @@ async function loadUsers(container) {
               <label for="uf-role">Role</label>
               <select id="uf-role" required>
                 <option value="Cashier">Cashier</option>
+                <option value="Waiter">Waiter</option>
                 <option value="Owner">Owner</option>
               </select>
             </div>
@@ -2629,8 +2912,9 @@ const NAV_SHORTCUTS = {
   F4: 'sales',
   F5: 'daily',
   F6: 'reports',
-  F7: 'activity',
-  F8: 'users',
+  F7: 'analytics',
+  F8: 'activity',
+  F9: 'users',
 };
 
 document.addEventListener('keydown', (e) => {
@@ -2666,8 +2950,8 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // F9: Complete Sale (when in POS)
-  if (e.key === 'F9') {
+  // F10: Complete Sale (when in POS)
+  if (e.key === 'F10') {
     e.preventDefault();
     const completeBtn = document.getElementById('pos-complete-btn');
     if (completeBtn) completeSale();

@@ -583,6 +583,30 @@ async function getInventoryValueReport() {
   };
 }
 
+// Open drafts for a specific waiter (used by the Waiter mobile view).
+async function getMyTables(waiterName) {
+  return (await getOpenDrafts()).filter((d) => d.waiter_name === waiterName);
+}
+
+// Waiter's daily summary: tables completed, total revenue, items.
+async function getWaiterDailySummary(waiterName, date) {
+  const sales = (await getSales()).filter(
+    (s) => !s.refunded && localDate(s.sale_date) === date && s.waiter_name === waiterName
+  );
+  const totalOut = sales.reduce((s, sale) => s + Number(sale.total_amount), 0);
+  const totalItems = sales.reduce((s, sale) => sale.products.reduce((ss, i) => ss + Number(i.quantity), ss), 0);
+  return { date, waiterName, tablesServed: sales.length, totalOut, totalItems, sales };
+}
+
+// Full staff analytics for the Owner: cashiers + waiters for a given date.
+async function getStaffAnalytics(date) {
+  const [cashiers, waiterReport] = await Promise.all([
+    getCashiersDaily(date),
+    getWaiterDailyReport(date),
+  ]);
+  return { date, cashiers, waiters: waiterReport.waiters, grandTotalOut: waiterReport.grandTotalOut };
+}
+
 // ---------- Printing (browser) ----------
 
 function printHtml(html) {
@@ -614,6 +638,7 @@ export const api = {
   getExpenses, createExpense, deleteExpense, captureOpeningStock, getDailyStockReport,
   getSalesReport, getMonthlySummary, getWaiterDailyReport, getInventoryValueReport,
   getCashierTakings, getCashiersDaily,
+  getMyTables, getWaiterDailySummary, getStaffAnalytics,
   // Printing: in the browser, "Save as PDF" is the print dialog's destination.
   printReceipt: (html) => printHtml(html),
   saveReceiptPdf: (html) => printHtml(html),

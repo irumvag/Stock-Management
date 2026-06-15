@@ -1867,3 +1867,274 @@ tr.row-muted td { color: #94a3b8; }
     padding: 30px 20px;
   }
 }
+
+/* =====================================================
+   WAITER MOBILE MODE
+   ===================================================== */
+
+#app.waiter-mode #sidebar {
+  display: none;
+}
+
+#app.waiter-mode #content {
+  padding: 0;
+  background: #f1f5f9;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.waiter-app {
+  max-width: 480px;
+  margin: 0 auto;
+  padding-bottom: 48px;
+}
+
+/* Sticky header */
+.waiter-header {
+  background: #1e293b;
+  color: #fff;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.waiter-header-name {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.waiter-header-date {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.waiter-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.waiter-action-btn {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.waiter-action-btn:active {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.waiter-signout {
+  background: rgba(239, 68, 68, 0.35);
+}
+
+/* Stats strip */
+.waiter-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background: #334155;
+  color: #fff;
+}
+
+.waiter-stat {
+  padding: 14px 10px;
+  text-align: center;
+  border-right: 1px solid #475569;
+}
+
+.waiter-stat:last-child {
+  border-right: none;
+}
+
+.waiter-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #38bdf8;
+}
+
+.waiter-stat-label {
+  font-size: 10px;
+  color: #94a3b8;
+  margin-top: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* Sections */
+.waiter-section {
+  padding: 16px 16px 4px;
+}
+
+.waiter-section-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 12px;
+}
+
+.waiter-empty {
+  text-align: center;
+  color: #94a3b8;
+  padding: 28px 16px;
+  font-size: 14px;
+  background: #fff;
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+
+/* Table cards */
+.waiter-table-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
+  border-left: 4px solid #3b82f6;
+}
+
+.waiter-card-done {
+  border-left-color: #22c55e;
+}
+
+.waiter-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.waiter-card-table {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.waiter-card-time {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.waiter-card-customer {
+  font-size: 13px;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+.waiter-card-meta {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.waiter-card-total {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0ea5e9;
+}
+
+/* Expandable item list */
+.waiter-items-list {
+  margin-top: 12px;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 10px;
+}
+
+.waiter-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 14px;
+  border-bottom: 1px dotted #f1f5f9;
+}
+
+.waiter-item-row:last-of-type {
+  border-bottom: none;
+}
+
+.waiter-item-name {
+  flex: 1;
+  color: #1e293b;
+  font-weight: 500;
+}
+
+.waiter-item-size {
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.waiter-item-qty {
+  background: #f1f5f9;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-weight: 700;
+  color: #475569;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.waiter-item-sub {
+  font-weight: 600;
+  color: #0ea5e9;
+  min-width: 72px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.waiter-items-footer {
+  text-align: right;
+  padding-top: 8px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.waiter-items-toggle {
+  display: block;
+  background: none;
+  border: none;
+  color: #3b82f6;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 10px 0 0;
+  width: 100%;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* =====================================================
+   ANALYTICS VIEW
+   ===================================================== */
+
+.analytics-sub {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.analytics-total-tag {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: #3b82f6;
+  border-radius: 20px;
+  padding: 2px 10px;
+}
+
+.analytics-sub-stat {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
