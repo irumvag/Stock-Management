@@ -9,12 +9,20 @@ export default async function handler(req, res) {
   if (cors(req, res)) return;
   if (!requireAuth(req, res)) return;
 
-  const since = req.query.since || '1970-01-01T00:00:00.000Z';
+  // Validate the `since` cursor — must be a parseable date.
+  const rawSince = req.query.since || '1970-01-01T00:00:00.000Z';
+  const sinceDate = new Date(rawSince);
+  if (isNaN(sinceDate.getTime())) {
+    return res.status(400).json({ error: 'Invalid since parameter — must be an ISO timestamp' });
+  }
+  const since = sinceDate.toISOString();
+
   const tables = {};
   let cursor = since;
 
   for (const [name, def] of Object.entries(SYNC_TABLES)) {
-    const cols = def.cols.join(', ');
+    // Use pullCols if defined (e.g. users strips password_hash); fall back to cols.
+    const cols = (def.pullCols || def.cols).join(', ');
     // table names are from our own whitelist, safe to interpolate
     const rows = await sql.query(
       `SELECT ${cols} FROM ${name} WHERE updated_at > $1 ORDER BY updated_at ASC`,

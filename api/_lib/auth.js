@@ -1,12 +1,21 @@
 import jwt from 'jsonwebtoken';
 
-const SECRET = process.env.JWT_SECRET || 'dev-insecure-secret-change-me';
-const TOKEN_TTL = '30d';
+const SECRET = process.env.JWT_SECRET;
+if (!SECRET) {
+  // Block startup in production; allow dev with a loud warning.
+  if (process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production') {
+    throw new Error('JWT_SECRET environment variable is required in production');
+  }
+  // eslint-disable-next-line no-console
+  console.warn('[auth] WARNING: JWT_SECRET not set — using insecure dev default. Set it before deploying.');
+}
+const JWT_SECRET = SECRET || 'dev-insecure-secret-change-me-before-deploy';
+const TOKEN_TTL = '8h';
 
 export function signToken(user) {
   return jwt.sign(
     { sub: user.uuid, username: user.username, role: user.role },
-    SECRET,
+    JWT_SECRET,
     { expiresIn: TOKEN_TTL }
   );
 }
@@ -16,7 +25,7 @@ export function verifyToken(req) {
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return null;
   try {
-    return jwt.verify(token, SECRET);
+    return jwt.verify(token, JWT_SECRET);
   } catch {
     return null;
   }
@@ -37,9 +46,19 @@ export function requireAuth(req, res, role) {
   return claims;
 }
 
-// Minimal CORS + JSON body helper so the PWA (different dev origin) can call us.
+// Allowlist for CORS. In production this should be set to the Vercel URL via
+// ALLOWED_ORIGIN env var. Falls back to '*' only in local dev.
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
+
 export function cors(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin || '';
+  // In production, only echo back the origin if it matches; otherwise omit header.
+  if (ALLOWED_ORIGIN === '*') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  } else if (origin === ALLOWED_ORIGIN || origin.startsWith('http://localhost:')) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   if (req.method === 'OPTIONS') {

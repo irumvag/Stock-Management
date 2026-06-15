@@ -35,8 +35,14 @@ export const SYNC_TABLES = {
     pushable: true,
   },
   users: {
-    // Pulled so cached credentials allow offline login. Hash only, never plaintext.
+    // `cols` is the full IndexedDB schema (includes password_hash for the user
+    // who logged in — stored by /api/auth/login, not by sync/pull).
+    // `pullCols` is what /api/sync/pull actually sends — password_hash is
+    // intentionally excluded so other users' hashes never travel to a device
+    // they didn't log into. Each user must complete one online login to cache
+    // their own credentials; subsequent logins on that device work offline.
     cols: ['uuid', 'username', 'password_hash', 'role', 'updated_at', 'deleted'],
+    pullCols: ['uuid', 'username', 'role', 'updated_at', 'deleted'],
     pushable: false,
   },
 };
