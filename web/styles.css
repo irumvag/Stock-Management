@@ -610,8 +610,8 @@ th {
 
 .cart-item {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 6px;
   padding: 12px 0;
   border-bottom: 1px solid #f1f5f9;
 }
@@ -620,46 +620,63 @@ th {
   border-bottom: none;
 }
 
-.cart-item-info {
-  flex: 1;
-  min-width: 0;
+/* Row 1: product name + remove button */
+.cart-item-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .cart-item-name {
   font-weight: 600;
-  font-size: 15px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 14px;
+  line-height: 1.35;
+  flex: 1;
+}
+
+.cart-item-size {
+  font-weight: 400;
+  color: #64748b;
+}
+
+/* Row 2: unit price · qty controls · subtotal */
+.cart-item-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .cart-item-detail {
-  font-size: 13px;
+  font-size: 12px;
   color: #64748b;
-  margin-top: 2px;
+  flex: 1;
+  white-space: nowrap;
 }
 
 .cart-item-controls {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .btn-cart-qty {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   border: 1px solid #d1d5db;
   border-radius: 6px;
   background: #f8fafc;
   cursor: pointer;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: background 0.15s;
   user-select: none;
   -webkit-user-select: none;
+  line-height: 1;
 }
 
 .btn-cart-qty:hover {
@@ -668,8 +685,8 @@ th {
 
 .cart-item-qty {
   font-weight: 700;
-  font-size: 16px;
-  min-width: 24px;
+  font-size: 15px;
+  min-width: 22px;
   text-align: center;
 }
 
@@ -677,15 +694,13 @@ th {
   background: none;
   border: none;
   color: #94a3b8;
-  font-size: 22px;
+  font-size: 20px;
   cursor: pointer;
-  padding: 4px 8px;
-  margin-left: 4px;
-  min-width: 36px;
-  min-height: 36px;
+  padding: 0 4px;
+  line-height: 1;
   display: flex;
   align-items: center;
-  justify-content: center;
+  flex-shrink: 0;
 }
 
 .btn-cart-remove:hover {
@@ -694,10 +709,10 @@ th {
 
 .cart-item-subtotal {
   font-weight: 700;
-  font-size: 15px;
-  min-width: 70px;
-  text-align: right;
+  font-size: 13px;
   color: #1e293b;
+  white-space: nowrap;
+  text-align: right;
 }
 
 /* --- Cart Total --- */

@@ -530,9 +530,11 @@ function addToCart(productId) {
   const product = allProductsCache.find((p) => p.id === productId);
   if (!product) return;
 
+  // Neon returns NUMERIC columns as strings — coerce to Number to avoid string concatenation.
+  const unitPrice = Number(product.selling_price) || 0;
   const existing = cart.find((item) => item.product_id === productId);
   if (existing) {
-    if (existing.quantity >= product.current_stock) return; // can't exceed stock
+    if (existing.quantity >= product.current_stock) return;
     existing.quantity += 1;
     existing.subtotal = existing.quantity * existing.unit_price;
   } else {
@@ -541,9 +543,9 @@ function addToCart(productId) {
       product_uuid: product.uuid,
       product_name: product.name,
       size_unit: product.size_unit,
-      unit_price: product.selling_price,
+      unit_price: unitPrice,
       quantity: 1,
-      subtotal: product.selling_price,
+      subtotal: unitPrice,
       max_stock: product.current_stock,
     });
   }
@@ -573,7 +575,7 @@ function removeFromCart(productId) {
 }
 
 function getCartTotal() {
-  return cart.reduce((sum, item) => sum + item.subtotal, 0);
+  return cart.reduce((sum, item) => sum + Number(item.subtotal), 0);
 }
 
 function renderCart() {
@@ -588,17 +590,19 @@ function renderCart() {
 
   container.innerHTML = cart.map((item) => `
     <div class="cart-item" data-id="${item.product_id}">
-      <div class="cart-item-info">
-        <div class="cart-item-name">${escapeHtml(item.product_name)}</div>
-        <div class="cart-item-detail">${escapeHtml(item.size_unit)} &middot; ${fmtCurrency(item.unit_price)} each</div>
-      </div>
-      <div class="cart-item-controls">
-        <button class="btn-cart-qty" data-action="minus" data-id="${item.product_id}">-</button>
-        <span class="cart-item-qty">${item.quantity}</span>
-        <button class="btn-cart-qty" data-action="plus" data-id="${item.product_id}">+</button>
+      <div class="cart-item-top">
+        <div class="cart-item-name">${escapeHtml(item.product_name)}${item.size_unit ? `<span class="cart-item-size"> · ${escapeHtml(item.size_unit)}</span>` : ''}</div>
         <button class="btn-cart-remove" data-id="${item.product_id}" title="Remove">&times;</button>
       </div>
-      <div class="cart-item-subtotal">${fmtNum(item.subtotal)}</div>
+      <div class="cart-item-bottom">
+        <div class="cart-item-detail">${fmtCurrency(item.unit_price)} each</div>
+        <div class="cart-item-controls">
+          <button class="btn-cart-qty" data-action="minus" data-id="${item.product_id}">&#8722;</button>
+          <span class="cart-item-qty">${item.quantity}</span>
+          <button class="btn-cart-qty" data-action="plus" data-id="${item.product_id}">+</button>
+        </div>
+        <div class="cart-item-subtotal">${fmtCurrency(item.subtotal)}</div>
+      </div>
     </div>`).join('');
 
   const total = getCartTotal();
