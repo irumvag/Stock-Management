@@ -158,7 +158,7 @@ async function getCategories() {
   return [...new Set((await getProducts()).map((p) => p.category))].sort();
 }
 async function getLowStockProducts() {
-  return (await getProducts()).filter((p) => p.current_stock <= p.min_stock_alert).sort((a, b) => a.current_stock - b.current_stock);
+  return (await getProducts()).filter((p) => Number(p.current_stock) <= Number(p.min_stock_alert)).sort((a, b) => Number(a.current_stock) - Number(b.current_stock));
 }
 async function createProduct(p) {
   const row = {
@@ -199,7 +199,7 @@ async function deleteProduct(id) {
 async function adjustStock(productId, delta) {
   const p = await db.products.get(productId);
   if (!p) return;
-  await persist('products', { ...p, current_stock: p.current_stock + delta, updated_at: nowIso() });
+  await persist('products', { ...p, current_stock: Number(p.current_stock) + delta, updated_at: nowIso() });
 }
 
 // ---------- Sales ----------
@@ -292,7 +292,7 @@ async function createDraft({ waiter_name, table_number, customer_name }) {
   return { id, ...row };
 }
 function recalcDraft(d) {
-  d.total_amount = d.items.reduce((s, i) => s + i.subtotal, 0);
+  d.total_amount = d.items.reduce((s, i) => s + Number(i.subtotal), 0);
   return d;
 }
 async function addItemsToDraft(draftId, items) {
@@ -416,8 +416,8 @@ async function captureOpeningStock(date) {
     if (existing) continue;
     const row = {
       uuid: uuid(), snapshot_date: date, product_uuid: p.uuid, product_name: p.name,
-      category: p.category, size_unit: p.size_unit, opening_stock: p.current_stock,
-      closing_stock: null, unit_price: p.selling_price, updated_at: nowIso(), deleted: false,
+      category: p.category, size_unit: p.size_unit, opening_stock: Number(p.current_stock),
+      closing_stock: null, unit_price: Number(p.selling_price), updated_at: nowIso(), deleted: false,
     };
     await db.daily_snapshots.add(row);
     await enqueue('daily_snapshots', { ...row });
@@ -435,13 +435,14 @@ async function getDailyStockReport(date) {
 
   const items = products.map((p) => {
     const snap = snapByUuid[p.uuid];
-    const opening = snap ? snap.opening_stock : p.current_stock;
-    const closing = p.current_stock;
+    const opening = snap ? Number(snap.opening_stock) : Number(p.current_stock);
+    const closing = Number(p.current_stock);
     const sold = Math.max(0, opening - closing);
+    const price = Number(p.selling_price);
     return {
       product_name: p.name, category: p.category, size_unit: p.size_unit,
       opening_stock: opening, closing_stock: closing, sold,
-      unit_price: p.selling_price, amount: sold * p.selling_price,
+      unit_price: price, amount: sold * price,
     };
   });
 
@@ -450,11 +451,11 @@ async function getDailyStockReport(date) {
   const payments = {};
   let totalOut = 0;
   for (const s of sales) {
-    payments[s.payment_method] = (payments[s.payment_method] || 0) + s.total_amount;
-    totalOut += s.total_amount;
+    payments[s.payment_method] = (payments[s.payment_method] || 0) + Number(s.total_amount);
+    totalOut += Number(s.total_amount);
   }
   const expenses = await getExpenses(date);
-  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
 
   return {
     date,
@@ -480,17 +481,17 @@ async function getSalesReport(start, end) {
   const productMap = {};
   let totalOut = 0, totalItems = 0;
   for (const sale of sales) {
-    totalOut += sale.total_amount;
+    totalOut += Number(sale.total_amount);
     for (const item of sale.products) {
-      totalItems += item.quantity;
+      totalItems += Number(item.quantity);
       const key = item.product_uuid || item.product_name;
       if (!productMap[key]) productMap[key] = { product_name: item.product_name, size_unit: item.size_unit || '', total_qty: 0, total_amount: 0 };
-      productMap[key].total_qty += item.quantity;
-      productMap[key].total_amount += item.subtotal;
+      productMap[key].total_qty += Number(item.quantity);
+      productMap[key].total_amount += Number(item.subtotal);
     }
   }
   const payments = {};
-  for (const sale of sales) payments[sale.payment_method] = (payments[sale.payment_method] || 0) + sale.total_amount;
+  for (const sale of sales) payments[sale.payment_method] = (payments[sale.payment_method] || 0) + Number(sale.total_amount);
   return {
     startDate: start, endDate: end,
     totalSales: sales.length, totalItems, totalOut,
@@ -506,8 +507,8 @@ async function getMonthlySummary() {
     const m = localDate(s.sale_date).slice(0, 7);
     if (!months[m]) months[m] = { month: m, totalSales: 0, totalOut: 0, totalItems: 0 };
     months[m].totalSales += 1;
-    months[m].totalOut += s.total_amount;
-    for (const item of s.products) months[m].totalItems += item.quantity;
+    months[m].totalOut += Number(s.total_amount);
+    for (const item of s.products) months[m].totalItems += Number(item.quantity);
   }
   return Object.values(months).sort((a, b) => b.month.localeCompare(a.month));
 }
@@ -519,8 +520,8 @@ async function getWaiterDailyReport(date) {
     const w = sale.waiter_name;
     if (!map[w]) map[w] = { waiter_name: w, totalSales: 0, totalOut: 0, totalItems: 0, sales: [] };
     map[w].totalSales += 1;
-    map[w].totalOut += sale.total_amount;
-    for (const item of sale.products) map[w].totalItems += item.quantity;
+    map[w].totalOut += Number(sale.total_amount);
+    for (const item of sale.products) map[w].totalItems += Number(item.quantity);
     map[w].sales.push(sale);
   }
   const waiters = Object.values(map).sort((a, b) => b.totalOut - a.totalOut);
@@ -538,9 +539,9 @@ async function getCashierTakings(date, cashier) {
   const payments = {};
   let totalCollected = 0, itemsCount = 0;
   for (const s of sales) {
-    payments[s.payment_method] = (payments[s.payment_method] || 0) + s.total_amount;
-    totalCollected += s.total_amount;
-    for (const it of s.products) itemsCount += it.quantity;
+    payments[s.payment_method] = (payments[s.payment_method] || 0) + Number(s.total_amount);
+    totalCollected += Number(s.total_amount);
+    for (const it of s.products) itemsCount += Number(it.quantity);
   }
   return { date, cashier, salesCount: sales.length, itemsCount, totalCollected, payments };
 }
@@ -553,9 +554,9 @@ async function getCashiersDaily(date) {
     const c = s.cashier || '(unknown)';
     if (!map[c]) map[c] = { cashier: c, salesCount: 0, itemsCount: 0, totalCollected: 0, payments: {} };
     map[c].salesCount += 1;
-    map[c].totalCollected += s.total_amount;
-    for (const it of s.products) map[c].itemsCount += it.quantity;
-    map[c].payments[s.payment_method] = (map[c].payments[s.payment_method] || 0) + s.total_amount;
+    map[c].totalCollected += Number(s.total_amount);
+    for (const it of s.products) map[c].itemsCount += Number(it.quantity);
+    map[c].payments[s.payment_method] = (map[c].payments[s.payment_method] || 0) + Number(s.total_amount);
   }
   return Object.values(map).sort((a, b) => b.totalCollected - a.totalCollected);
 }
@@ -564,7 +565,7 @@ async function getInventoryValueReport() {
   const products = await getProducts();
   let totalSellingValue = 0;
   const items = products.map((p) => {
-    const sellVal = p.selling_price * p.current_stock;
+    const sellVal = Number(p.selling_price) * Number(p.current_stock);
     totalSellingValue += sellVal;
     return { ...p, stock_selling_value: sellVal };
   });
@@ -573,11 +574,11 @@ async function getInventoryValueReport() {
     if (!categories[p.category]) categories[p.category] = { category: p.category, sellingValue: 0, itemCount: 0, stockCount: 0 };
     categories[p.category].sellingValue += p.stock_selling_value;
     categories[p.category].itemCount += 1;
-    categories[p.category].stockCount += p.current_stock;
+    categories[p.category].stockCount += Number(p.current_stock);
   }
   return {
     totalSellingValue, totalProducts: products.length,
-    totalStock: products.reduce((s, p) => s + p.current_stock, 0),
+    totalStock: products.reduce((s, p) => s + Number(p.current_stock), 0),
     items, categories: Object.values(categories).sort((a, b) => b.sellingValue - a.sellingValue),
   };
 }

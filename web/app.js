@@ -274,8 +274,8 @@ function renderHBars(items, color, money) {
 
 async function loadDashboard(container) {
   const products = await window.api.getProducts();
-  const lowStock = products.filter((p) => p.current_stock <= p.min_stock_alert);
-  const totalValue = products.reduce((sum, p) => sum + p.selling_price * p.current_stock, 0);
+  const lowStock = products.filter((p) => Number(p.current_stock) <= Number(p.min_stock_alert));
+  const totalValue = products.reduce((sum, p) => sum + Number(p.selling_price) * Number(p.current_stock), 0);
   const categories = [...new Set(products.map((p) => p.category))];
 
   // --- Chart data ---
@@ -290,7 +290,7 @@ async function loadDashboard(container) {
   const byDay = Object.fromEntries(last7.map((d) => [d.key, 0]));
   for (const s of sales) {
     const k = dayKey(new Date(s.sale_date));
-    if (k in byDay) byDay[k] += s.total_amount;
+    if (k in byDay) byDay[k] += Number(s.total_amount);
   }
   const week = last7.map((d) => ({ label: d.label, value: byDay[d.key] }));
   const weekTotal = week.reduce((s, d) => s + d.value, 0);
@@ -486,7 +486,7 @@ function renderPOSProductGrid(products) {
         <div class="pos-card-name">${escapeHtml(p.name)}</div>
         <div class="pos-card-detail">${escapeHtml(p.category)} &middot; ${escapeHtml(p.size_unit)}</div>
         <div class="pos-card-price">${fmtCurrency(p.selling_price)}</div>
-        <div class="pos-card-stock ${p.current_stock <= p.min_stock_alert ? 'stock-low' : ''}">
+        <div class="pos-card-stock ${Number(p.current_stock) <= Number(p.min_stock_alert) ? 'stock-low' : ''}">
           ${outOfStock ? 'Out of stock' : p.current_stock + ' in stock'}
         </div>
       </div>`;
@@ -762,7 +762,7 @@ async function renderDraftsList() {
   container.innerHTML = `
     <div class="drafts-grid">
       ${drafts.map((d) => {
-        const itemCount = d.items.reduce((s, i) => s + i.quantity, 0);
+        const itemCount = d.items.reduce((s, i) => s + Number(i.quantity), 0);
         const timeAgo = getTimeAgo(d.updated_at);
         return `
         <div class="draft-card" data-draft-id="${d.id}">
@@ -839,7 +839,7 @@ async function renderDraftsList() {
   // Bind item quantity +/- and remove buttons
   container.querySelectorAll('[data-item-minus]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const itemId = Number(btn.dataset.itemMinus);
+      const itemId = btn.dataset.itemMinus;
       const qtyEl = btn.parentElement.querySelector('.draft-item-qty');
       const currentQty = parseInt(qtyEl.textContent, 10);
       if (currentQty <= 1) {
@@ -857,7 +857,7 @@ async function renderDraftsList() {
 
   container.querySelectorAll('[data-item-plus]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const itemId = Number(btn.dataset.itemPlus);
+      const itemId = btn.dataset.itemPlus;
       const qtyEl = btn.parentElement.querySelector('.draft-item-qty');
       const currentQty = parseInt(qtyEl.textContent, 10);
       const result = await window.api.updateDraftItemQty(itemId, currentQty + 1);
@@ -869,7 +869,7 @@ async function renderDraftsList() {
 
   container.querySelectorAll('[data-item-remove]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const itemId = Number(btn.dataset.itemRemove);
+      const itemId = btn.dataset.itemRemove;
       if (!confirm('Remove this item from the tab? Stock will be restored.')) return;
       const result = await window.api.removeItemFromDraft(itemId);
       if (!result.success) { alert(result.error); return; }
@@ -953,7 +953,7 @@ function showReceipt(sale) {
   const receiptContent = document.getElementById('receipt-content');
   const { date, time } = formatReceiptDate(sale.sale_date);
   const items = sale.products;
-  const itemCount = items.reduce((s, i) => s + i.quantity, 0);
+  const itemCount = items.reduce((s, i) => s + Number(i.quantity), 0);
 
   receiptContent.innerHTML = `
     <div class="receipt">
@@ -1007,7 +1007,7 @@ function showReceipt(sale) {
 function buildReceiptPrintHtml(sale) {
   const { date, time } = formatReceiptDate(sale.sale_date);
   const items = sale.products;
-  const itemCount = items.reduce((s, i) => s + i.quantity, 0);
+  const itemCount = items.reduce((s, i) => s + Number(i.quantity), 0);
 
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><style>
@@ -1169,7 +1169,7 @@ function showSaleDetail(sale) {
 
   const { date, time } = formatReceiptDate(sale.sale_date);
   const items = sale.products;
-  const itemCount = items.reduce((s, i) => s + i.quantity, 0);
+  const itemCount = items.reduce((s, i) => s + Number(i.quantity), 0);
 
   panel.innerHTML = `
     <div class="sale-detail-card">
@@ -1812,7 +1812,7 @@ async function loadInventoryValueReport(container) {
         <thead><tr><th>Product</th><th>Category</th><th>Size</th><th>Stock</th><th>Sell Price</th><th>Stock Value</th></tr></thead>
         <tbody>
           ${report.items.map((p) => `
-            <tr class="${p.current_stock <= p.min_stock_alert ? 'row-low-stock' : ''}">
+            <tr class="${Number(p.current_stock) <= Number(p.min_stock_alert) ? 'row-low-stock' : ''}">
               <td>${escapeHtml(p.name)}</td>
               <td>${escapeHtml(p.category)}</td>
               <td>${escapeHtml(p.size_unit)}</td>
@@ -2016,7 +2016,7 @@ function renderProductsTable(products) {
       </thead>
       <tbody>
         ${products.map((p) => {
-          const isLow = p.current_stock <= p.min_stock_alert;
+          const isLow = Number(p.current_stock) <= Number(p.min_stock_alert);
           return `
           <tr class="${isLow ? 'row-low-stock' : ''}" data-id="${p.id}">
             <td>${escapeHtml(p.name)}</td>
@@ -2066,7 +2066,7 @@ async function filterProducts() {
   }
 
   if (lowOnly) {
-    products = products.filter((p) => p.current_stock <= p.min_stock_alert);
+    products = products.filter((p) => Number(p.current_stock) <= Number(p.min_stock_alert));
   }
 
   const container = document.getElementById('products-table-container');
