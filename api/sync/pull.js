@@ -23,8 +23,9 @@ export default async function handler(req, res) {
   for (const [name, def] of Object.entries(SYNC_TABLES)) {
     // Use pullCols if defined (e.g. users strips password_hash); fall back to cols.
     const cols = (def.pullCols || def.cols).join(', ');
-    // table names are from our own whitelist, safe to interpolate
-    const rows = await sql.query(
+    // table names are from our own whitelist, safe to interpolate.
+    // neon() HTTP driver uses sql(text, params) not sql.query().
+    const rows = await sql(
       `SELECT ${cols} FROM ${name} WHERE updated_at > $1 ORDER BY updated_at ASC`,
       [since]
     );

@@ -33,7 +33,7 @@ export default async function handler(req, res) {
       `ON CONFLICT (uuid) DO UPDATE SET ${updates} ` +
       `WHERE ${m.table}.updated_at <= EXCLUDED.updated_at`;
 
-    await sql.query(text, values);
+    await sql(text, values);
     applied++;
   }
 
