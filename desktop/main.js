@@ -1,5 +1,6 @@
-const { app, BrowserWindow, shell, Menu } = require('electron');
+const { app, BrowserWindow, shell, Menu, dialog } = require('electron');
 const path = require('path');
+const { autoUpdater } = require('electron-updater');
 
 const APP_URL = 'https://club-tmp-stock.vercel.app';
 
@@ -63,6 +64,31 @@ function createWindow() {
 
 app.whenReady().then(() => {
   createWindow();
+
+  // Check for updates silently 5s after launch so the window loads first.
+  setTimeout(() => autoUpdater.checkForUpdatesAndNotify().catch(() => {}), 5000);
+
+  autoUpdater.on('update-available', () => {
+    dialog.showMessageBox({
+      type: 'info',
+      title: 'Update Available',
+      message: 'A new version is downloading in the background. You will be notified when it is ready.',
+      buttons: ['OK'],
+    }).catch(() => {});
+  });
+
+  autoUpdater.on('update-downloaded', () => {
+    dialog.showMessageBox({
+      type: 'info',
+      title: 'Update Ready',
+      message: 'Update downloaded. Restart now to apply it.',
+      buttons: ['Restart Now', 'Later'],
+      defaultId: 0,
+    }).then(({ response }) => {
+      if (response === 0) autoUpdater.quitAndInstall();
+    }).catch(() => {});
+  });
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

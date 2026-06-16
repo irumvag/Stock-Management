@@ -29,33 +29,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Windows installer
-        run: npm run build:win
+      # --publish always: electron-builder creates a GitHub Release, uploads
+      # the .exe AND latest.yml (needed for auto-update to work).
+      - name: Build and publish Windows installer
+        run: npm run build:release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Also save the .exe as a workflow artifact for 30 days.
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: ClubTMP-Stock-Manager-Setup
           path: desktop/dist/*.exe
           retention-days: 30
-
-      # Also create a GitHub Release automatically when run on release-2
-      - name: Create GitHub Release
-        if: github.ref == 'refs/heads/release-2'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: desktop-v${{ github.run_number }}
-          name: Club TMP Stock Manager v2.${{ github.run_number }}
-          body: |
-            ## Desktop App — Windows Installer
-
-            Download and run **ClubTMPStockManagerSetup.exe** to install.
-
-            - Works offline (PWA cache)
-            - Syncs to cloud when internet is available
-            - Cashier + Owner + Waiter roles supported
-
-            **Web app:** https://club-tmp-stock.vercel.app
-          files: desktop/dist/*.exe
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

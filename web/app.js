@@ -166,7 +166,16 @@ function showLogin() {
   loginForm.reset();
   loginError.hidden = true;
   document.getElementById('username').focus();
+  updateOfflineBanner();
 }
+
+function updateOfflineBanner() {
+  const banner = document.getElementById('offline-banner');
+  if (banner) banner.hidden = navigator.onLine;
+}
+
+window.addEventListener('online',  updateOfflineBanner);
+window.addEventListener('offline', updateOfflineBanner);
 
 // --- Navigation ---
 

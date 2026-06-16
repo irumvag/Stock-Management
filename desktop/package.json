@@ -12,6 +12,7 @@
   "scripts": {
     "start": "electron .",
     "build:win": "electron-builder --win --x64 --publish never",
+    "build:release": "electron-builder --win --x64 --publish always",
     "build:mac": "electron-builder --mac --publish never"
   },
   "build": {
@@ -43,7 +44,16 @@
     "files": [
       "main.js",
       "preload.js"
-    ]
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "irumvag",
+      "repo": "Stock-Management",
+      "releaseType": "release"
+    }
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
   },
   "devDependencies": {
     "electron": "^31.7.7",

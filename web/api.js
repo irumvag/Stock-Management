@@ -3,9 +3,15 @@
 // works fully offline; mutations are queued in the outbox and synced to Neon by
 // sync.js. Reports are computed locally from synced data. No buying price / no
 // profit anywhere — only selling price and what went OUT.
-import bcrypt from 'bcryptjs';
-import { db, uuid, nowIso, enqueue } from './db.js';
+import { db, uuid, nowIso, enqueue, getMeta, setMeta } from './db.js';
 import { apiFetch, setToken, notifyMutation, syncNow } from './sync.js';
+
+// SHA-256 of "username:password" stored locally for offline credential check.
+async function hashCredential(username, password) {
+  const buf = await crypto.subtle.digest('SHA-256',
+    new TextEncoder().encode(`${username}:${password}`));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 const active = (rows) => rows.filter((r) => !r.deleted);
 const localDate = (d) => new Date(d).toLocaleDateString('en-CA'); // YYYY-MM-DD local
@@ -42,7 +48,7 @@ async function getActivityLog(limit = 200) {
 // ---------- Auth ----------
 
 async function login(username, password) {
-  // Prefer online: authoritative + caches users for later offline login.
+  // Prefer online: authoritative + caches credentials for offline use.
   if (navigator.onLine) {
     try {
       const res = await apiFetch('/api/auth/login', {
@@ -52,20 +58,33 @@ async function login(username, password) {
       const data = await res.json();
       if (data.success) {
         await setToken(data.token);
-        await syncNow(); // pull users + data into Dexie
+        // Cache credential hash + user profile so this device works offline.
+        const hash = await hashCredential(username, password);
+        await setMeta(`offline_cred_${username}`, hash);
+        await setMeta(`offline_user_${username}`, JSON.stringify(data.user));
+        await syncNow();
         return { success: true, user: data.user };
       }
       return { success: false, error: data.error || 'Invalid username or password' };
     } catch {
-      /* fall through to offline path */
+      /* network failure — fall through to offline path */
     }
   }
-  // Offline: verify against cached hash.
-  const u = (await db.users.where('username').equals(username).first());
-  if (!u || u.deleted || !bcrypt.compareSync(password, u.password_hash)) {
-    return { success: false, error: 'Invalid username or password (offline)' };
+  // Offline path: verify against locally stored credential hash.
+  const storedHash = await getMeta(`offline_cred_${username}`);
+  if (!storedHash) {
+    return {
+      success: false,
+      error: 'No offline access for this account. Connect to the internet and sign in once first.',
+    };
   }
-  return { success: true, user: { uuid: u.uuid, username: u.username, role: u.role } };
+  const hash = await hashCredential(username, password);
+  if (hash !== storedHash) {
+    return { success: false, error: 'Wrong password (you are offline).' };
+  }
+  const cachedUser = await getMeta(`offline_user_${username}`);
+  const user = cachedUser ? JSON.parse(cachedUser) : { username };
+  return { success: true, user };
 }
 
 // User management is online-only (touches credentials). Cashier devices receive

@@ -248,6 +248,20 @@ th {
   border: 1px solid #fecaca;
 }
 
+.offline-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fffbeb;
+  border: 1px solid #f59e0b;
+  color: #92400e;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+.offline-icon { font-size: 16px; flex-shrink: 0; }
+
 /* --- User info in sidebar --- */
 
 #user-info {
