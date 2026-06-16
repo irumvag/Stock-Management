@@ -27,21 +27,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Convert the SVG icon → ICO using sharp (no wine needed on Windows runner)
-      - name: Generate icon.ico
-        run: |
-          npm install --save-dev sharp
-          node -e "
-            const sharp = require('sharp');
-            const path = require('path');
-            sharp('../web/public/icon.svg')
-              .resize(256, 256)
-              .toFile('build/icon.ico', (err) => {
-                if (err) { console.error(err); process.exit(1); }
-                console.log('icon.ico created');
-              });
-          "
-
       - name: Build Windows installer
         run: npm run build:win
 
