@@ -45,4 +45,8 @@ export const SYNC_TABLES = {
     pullCols: ['uuid', 'username', 'role', 'updated_at', 'deleted'],
     pushable: false,
   },
+  messages: {
+    cols: ['uuid', 'from_user', 'to_user', 'subject', 'body', 'is_read', 'updated_at', 'deleted'],
+    pushable: true,
+  },
 };

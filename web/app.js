@@ -38,17 +38,20 @@ function stopInactivityTracking() {
 // history, and user management. The Cashier runs day-to-day operations and does
 // everything hands-on: POS, full inventory management (add products / update
 // stock), sales, and the daily reconciliation report.
-const OWNER_VIEWS = ['dashboard', 'pos', 'products', 'sales', 'daily', 'reports', 'activity', 'users'];
-const CASHIER_VIEWS = ['pos', 'products', 'daily', 'sales'];
+const OWNER_VIEWS      = ['dashboard', 'pos', 'products', 'sales', 'daily', 'reports', 'analytics', 'activity', 'users', 'messages', 'profile'];
+const CASHIER_VIEWS    = ['pos', 'products', 'daily', 'sales', 'analytics', 'messages', 'profile'];
+const WAITER_VIEWS     = ['waiter', 'messages', 'profile'];
 const SUPER_ADMIN_VIEWS = ['companies'];
 
 function getAllowedViews() {
   if (isSuperAdmin()) return SUPER_ADMIN_VIEWS;
+  if (isWaiter()) return WAITER_VIEWS;
   return isManager() ? OWNER_VIEWS : CASHIER_VIEWS;
 }
 
 function getDefaultView() {
   if (isSuperAdmin()) return 'companies';
+  if (isWaiter()) return 'waiter';
   return isManager() ? 'dashboard' : 'pos';
 }
 
@@ -118,6 +121,12 @@ function isManager() {
   return currentUser && (currentUser.role === 'Owner' || currentUser.role === 'Manager');
 }
 
+function isWaiter() {
+  return currentUser && currentUser.role === 'Waiter';
+}
+
+let waiterRefreshTimer = null;
+
 function showApp() {
   loginScreen.hidden = true;
   appContainer.hidden = false;
@@ -141,6 +150,13 @@ function showApp() {
   const syncBadge = document.getElementById('sync-badge');
   if (syncBadge) syncBadge.style.display = isSuperAdmin() ? 'none' : '';
 
+  // Waiter mode: full-screen mobile layout, no sidebar
+  if (isWaiter()) {
+    appContainer.classList.add('waiter-mode');
+  } else {
+    appContainer.classList.remove('waiter-mode');
+  }
+
   const defaultView = getDefaultView();
   const activeLink = document.querySelector('#sidebar a.active');
   if (activeLink) activeLink.classList.remove('active');
@@ -148,18 +164,79 @@ function showApp() {
   if (defaultLink) defaultLink.classList.add('active');
   loadView(defaultView);
 
+  // Show notification bell for non-waiter, non-superadmin users
+  const notifBar = document.getElementById('notif-bar');
+  if (notifBar) notifBar.style.display = (isWaiter() || isSuperAdmin()) ? 'none' : 'flex';
+
+  // Wire bell → Messages view
+  const bellBtn = document.getElementById('msg-bell-btn');
+  if (bellBtn) {
+    bellBtn.onclick = () => {
+      document.querySelectorAll('#sidebar a.active').forEach(a => a.classList.remove('active'));
+      const link = document.querySelector('[data-view="messages"]');
+      if (link) link.classList.add('active');
+      loadView('messages');
+    };
+  }
+
+  // Request browser notification permission once
+  if (Notification.permission === 'default') {
+    Notification.requestPermission().catch(() => {});
+  }
+
+  // Refresh unread badge
+  refreshUnreadBadge();
+
   // Start auto-logout timer
   startInactivityTracking();
 }
 
+async function refreshUnreadBadge() {
+  if (!currentUser) return;
+  const count = await window.api.getUnreadCount(currentUser.username);
+  const bell = document.getElementById('msg-badge');
+  const nav  = document.getElementById('nav-msg-badge');
+  if (bell) { bell.textContent = count; bell.hidden = count === 0; }
+  if (nav)  { nav.textContent  = count; nav.hidden  = count === 0; }
+}
+
+// Called from main.js after a successful sync
+let _lastUnreadCount = 0;
+window.checkNewMessages = async function checkNewMessages() {
+  if (!currentUser) return;
+  const count = await window.api.getUnreadCount(currentUser.username);
+  if (count > _lastUnreadCount && _lastUnreadCount !== -1) {
+    const diff = count - _lastUnreadCount;
+    if (Notification.permission === 'granted') {
+      new Notification('New message', {
+        body: `You have ${diff} new message${diff > 1 ? 's' : ''}.`,
+        icon: '/icon.svg',
+      });
+    }
+  }
+  _lastUnreadCount = count;
+  refreshUnreadBadge();
+};
+
 function showLogin() {
   stopInactivityTracking();
+  clearInterval(waiterRefreshTimer);
   appContainer.hidden = true;
+  appContainer.classList.remove('waiter-mode');
   loginScreen.hidden = false;
   loginForm.reset();
   loginError.hidden = true;
+  updateOfflineBanner();
   document.getElementById('company-code').focus();
 }
+
+function updateOfflineBanner() {
+  const banner = document.getElementById('offline-banner');
+  if (banner) banner.hidden = navigator.onLine;
+}
+
+window.addEventListener('online',  updateOfflineBanner);
+window.addEventListener('offline', updateOfflineBanner);
 
 // --- Navigation ---
 
@@ -204,11 +281,23 @@ async function loadView(view) {
     case 'reports':
       await loadReports(content);
       break;
+    case 'analytics':
+      await loadAnalytics(content);
+      break;
     case 'activity':
       await loadActivity(content);
       break;
     case 'users':
       await loadUsers(content);
+      break;
+    case 'waiter':
+      await loadWaiterView(content);
+      break;
+    case 'messages':
+      await loadMessages(content);
+      break;
+    case 'profile':
+      await loadProfile(content);
       break;
     case 'companies':
       await loadCompanies(content);
@@ -2767,8 +2856,9 @@ const NAV_SHORTCUTS = {
   F4: 'sales',
   F5: 'daily',
   F6: 'reports',
-  F7: 'activity',
-  F8: 'users',
+  F7: 'analytics',
+  F8: 'activity',
+  F9: 'users',
 };
 
 document.addEventListener('keydown', (e) => {
@@ -2804,8 +2894,8 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // F9: Complete Sale (when in POS)
-  if (e.key === 'F9') {
+  // F10: Complete Sale (when in POS)
+  if (e.key === 'F10') {
     e.preventDefault();
     const completeBtn = document.getElementById('pos-complete-btn');
     if (completeBtn) completeSale();
@@ -2829,3 +2919,443 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 });
+
+// =====================================================
+// WAITER MOBILE VIEW
+// =====================================================
+
+async function loadWaiterView(container) {
+  const waiterName = currentUser.username;
+  const today = new Date().toLocaleDateString('en-CA');
+
+  const [myTables, summary] = await Promise.all([
+    window.api.getMyTables(waiterName),
+    window.api.getWaiterDailySummary(waiterName, today),
+  ]);
+
+  container.innerHTML = `
+    <div class="waiter-app">
+      <div class="waiter-header">
+        <div>
+          <div class="waiter-header-name">${escapeHtml(waiterName)}</div>
+          <div class="waiter-header-date">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+        </div>
+        <div class="waiter-header-actions">
+          <button class="waiter-action-btn" id="waiter-refresh-btn">&#8635; Refresh</button>
+          <button class="waiter-action-btn waiter-signout" id="waiter-signout-btn">Sign Out</button>
+        </div>
+      </div>
+
+      <div class="waiter-summary-strip">
+        <div class="waiter-stat">
+          <div class="waiter-stat-value">${myTables.length}</div>
+          <div class="waiter-stat-label">Open Tables</div>
+        </div>
+        <div class="waiter-stat">
+          <div class="waiter-stat-value">${summary.tablesServed}</div>
+          <div class="waiter-stat-label">Served Today</div>
+        </div>
+        <div class="waiter-stat">
+          <div class="waiter-stat-value">${fmtCurrency(summary.totalOut)}</div>
+          <div class="waiter-stat-label">Today's Total</div>
+        </div>
+      </div>
+
+      <div class="waiter-section">
+        <h2 class="waiter-section-title">Open Tables (${myTables.length})</h2>
+        ${myTables.length === 0
+          ? '<div class="waiter-empty">No open tables assigned to you right now.</div>'
+          : myTables.map((d) => renderWaiterDraftCard(d)).join('')}
+      </div>
+
+      ${summary.sales.length > 0 ? `
+        <div class="waiter-section">
+          <h2 class="waiter-section-title">Completed Today (${summary.tablesServed})</h2>
+          ${summary.sales.map((s) => renderWaiterCompletedCard(s)).join('')}
+        </div>` : ''}
+    </div>`;
+
+  document.getElementById('waiter-refresh-btn').addEventListener('click', () => loadWaiterView(container));
+  document.getElementById('waiter-signout-btn').addEventListener('click', () => {
+    currentUser = null;
+    cart = [];
+    clearInterval(waiterRefreshTimer);
+    showLogin();
+  });
+
+  container.querySelectorAll('.waiter-items-toggle').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const list = btn.previousElementSibling;
+      const open = list.hidden;
+      list.hidden = !open;
+      btn.textContent = open ? '▲ Hide items' : '▼ View items';
+    });
+  });
+
+  clearInterval(waiterRefreshTimer);
+  waiterRefreshTimer = setInterval(() => loadWaiterView(container), 30000);
+}
+
+function renderWaiterDraftCard(draft) {
+  const itemCount = draft.items.reduce((s, i) => s + Number(i.quantity), 0);
+  return `
+    <div class="waiter-table-card waiter-card-open">
+      <div class="waiter-card-row">
+        <div class="waiter-card-table">🍽 ${escapeHtml(draft.table_number)}</div>
+        <div class="waiter-card-time">${getTimeAgo(draft.updated_at)}</div>
+      </div>
+      ${draft.customer_name ? `<div class="waiter-card-customer">Customer: ${escapeHtml(draft.customer_name)}</div>` : ''}
+      <div class="waiter-card-row" style="margin-top:8px;">
+        <div class="waiter-card-meta">${itemCount} item${itemCount !== 1 ? 's' : ''}</div>
+        <div class="waiter-card-total">${fmtCurrency(draft.total_amount)}</div>
+      </div>
+      <div class="waiter-items-list" hidden>
+        ${draft.items.map((i) => `
+          <div class="waiter-item-row">
+            <span class="waiter-item-name">${escapeHtml(i.product_name)} <small class="waiter-item-size">${escapeHtml(i.size_unit || '')}</small></span>
+            <span class="waiter-item-qty">×${i.quantity}</span>
+            <span class="waiter-item-sub">${fmtCurrency(Number(i.subtotal))}</span>
+          </div>`).join('')}
+        <div class="waiter-items-footer">Total: <strong>${fmtCurrency(draft.total_amount)}</strong></div>
+      </div>
+      <button class="waiter-items-toggle">▼ View items</button>
+    </div>`;
+}
+
+function renderWaiterCompletedCard(sale) {
+  const { time } = formatReceiptDate(sale.sale_date);
+  const itemCount = sale.products.reduce((s, i) => s + Number(i.quantity), 0);
+  return `
+    <div class="waiter-table-card waiter-card-done">
+      <div class="waiter-card-row">
+        <div class="waiter-card-table">✓ Table served</div>
+        <div class="waiter-card-time">${time}</div>
+      </div>
+      ${sale.customer_name ? `<div class="waiter-card-customer">Customer: ${escapeHtml(sale.customer_name)}</div>` : ''}
+      <div class="waiter-card-row" style="margin-top:6px;">
+        <div class="waiter-card-meta">${itemCount} item${itemCount !== 1 ? 's' : ''} · ${escapeHtml(sale.payment_method)}</div>
+        <div class="waiter-card-total">${fmtCurrency(Number(sale.total_amount))}</div>
+      </div>
+    </div>`;
+}
+
+// =====================================================
+// ANALYTICS
+// =====================================================
+
+async function loadAnalytics(container) {
+  const today = new Date().toLocaleDateString('en-CA');
+  const dateLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  const last7 = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    last7.push(d.toLocaleDateString('en-CA'));
+  }
+
+  if (isManager()) {
+    const [staff, waiterReport, salesReport] = await Promise.all([
+      window.api.getCashiersDaily(today),
+      window.api.getWaiterDailyReport(today),
+      window.api.getSalesReport(last7[0], last7[last7.length - 1]),
+    ]);
+
+    const byDay = Object.fromEntries(last7.map((d) => [d, 0]));
+    for (const s of salesReport.sales) {
+      const k = new Date(s.sale_date).toLocaleDateString('en-CA');
+      if (k in byDay) byDay[k] += Number(s.total_amount);
+    }
+    const weekBars = last7.map((d) => ({
+      label: new Date(d).toLocaleDateString('en-GB', { weekday: 'short' }),
+      value: byDay[d],
+    }));
+    const weekTotal = last7.reduce((s, d) => s + byDay[d], 0);
+
+    container.innerHTML = `
+      <div class="view-header"><h1>Analytics</h1></div>
+      <h2 style="margin-bottom:16px;">Today — ${dateLabel}</h2>
+
+      <h3 class="analytics-sub">Cashier Takings</h3>
+      ${staff.length === 0
+        ? '<div class="empty-state" style="margin-bottom:20px;">No sales recorded today.</div>'
+        : `<div class="stats-grid" style="margin-bottom:24px;">
+            ${staff.map((c) => `
+              <div class="stat-card">
+                <div class="stat-value">${fmtCurrency(c.totalCollected)}</div>
+                <div class="stat-label">${escapeHtml(c.cashier)}</div>
+                <div class="analytics-sub-stat">${c.salesCount} sale${c.salesCount !== 1 ? 's' : ''} · ${c.itemsCount} items</div>
+              </div>`).join('')}
+          </div>`}
+
+      <h3 class="analytics-sub">Waiter Tables Served</h3>
+      ${waiterReport.waiters.length === 0
+        ? '<div class="empty-state" style="margin-bottom:20px;">No sales recorded today.</div>'
+        : `<div class="table-wrap" style="margin-bottom:24px;">
+            <table>
+              <thead><tr><th>Waiter</th><th>Tables</th><th>Items</th><th>Amount</th></tr></thead>
+              <tbody>
+                ${waiterReport.waiters.map((w) => `
+                  <tr>
+                    <td><strong>${escapeHtml(w.waiter_name)}</strong></td>
+                    <td>${w.totalSales}</td>
+                    <td>${w.totalItems}</td>
+                    <td>${fmtCurrency(w.totalOut)}</td>
+                  </tr>`).join('')}
+              </tbody>
+              <tfoot><tr>
+                <th>Total</th>
+                <th>${waiterReport.grandTotalSales}</th>
+                <th>${waiterReport.grandTotalItems}</th>
+                <th>${fmtCurrency(waiterReport.grandTotalOut)}</th>
+              </tr></tfoot>
+            </table>
+          </div>`}
+
+      <h3 class="analytics-sub">Revenue — Last 7 Days <span class="analytics-total-tag">${fmtCurrency(weekTotal)}</span></h3>
+      <div style="margin-bottom:24px;">${renderVBars(weekBars)}</div>
+
+      <h3 class="analytics-sub">Top Products — Last 7 Days</h3>
+      ${salesReport.bestSellers.length === 0
+        ? '<div class="empty-state">No sales in the last 7 days.</div>'
+        : renderHBars(salesReport.bestSellers.slice(0, 8).map((p) => ({ label: p.product_name, value: p.total_qty })), '#3b82f6', false)}`;
+
+  } else {
+    const cashierName = currentUser.username;
+    const [takingsToday, salesReport] = await Promise.all([
+      window.api.getCashierTakings(today, cashierName),
+      window.api.getSalesReport(last7[0], last7[last7.length - 1]),
+    ]);
+
+    const mySales = salesReport.sales.filter((s) => (s.cashier || '') === cashierName);
+    const myTotal = mySales.reduce((s, sale) => s + Number(sale.total_amount), 0);
+    const myItems = mySales.reduce((s, sale) => sale.products.reduce((ss, i) => ss + Number(i.quantity), ss), 0);
+
+    const myByDay = Object.fromEntries(last7.map((d) => [d, 0]));
+    for (const s of mySales) {
+      const k = new Date(s.sale_date).toLocaleDateString('en-CA');
+      if (k in myByDay) myByDay[k] += Number(s.total_amount);
+    }
+    const weekBars = last7.map((d) => ({
+      label: new Date(d).toLocaleDateString('en-GB', { weekday: 'short' }),
+      value: myByDay[d],
+    }));
+
+    const prodMap = {};
+    for (const s of mySales) {
+      for (const item of s.products) {
+        const key = item.product_uuid || item.product_name;
+        if (!prodMap[key]) prodMap[key] = { label: item.product_name, value: 0 };
+        prodMap[key].value += Number(item.quantity);
+      }
+    }
+    const topProducts = Object.values(prodMap).sort((a, b) => b.value - a.value).slice(0, 8);
+
+    container.innerHTML = `
+      <div class="view-header"><h1>My Analytics</h1></div>
+      <h2 style="margin-bottom:16px;">Today — ${dateLabel}</h2>
+      <div class="stats-grid" style="margin-bottom:24px;">
+        <div class="stat-card">
+          <div class="stat-value">${fmtCurrency(takingsToday.totalCollected)}</div>
+          <div class="stat-label">Collected Today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">${takingsToday.salesCount}</div>
+          <div class="stat-label">Sales Today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">${takingsToday.itemsCount}</div>
+          <div class="stat-label">Items Sold</div>
+        </div>
+        ${Object.entries(takingsToday.payments).map(([m, a]) => `
+          <div class="stat-card">
+            <div class="stat-value">${fmtCurrency(a)}</div>
+            <div class="stat-label">${escapeHtml(m)}</div>
+          </div>`).join('')}
+      </div>
+
+      <h3 class="analytics-sub">My Revenue — Last 7 Days <span class="analytics-total-tag">${fmtCurrency(myTotal)}</span></h3>
+      <div class="analytics-sub-stat" style="margin-bottom:8px;">${mySales.length} sale${mySales.length !== 1 ? 's' : ''} · ${myItems} items</div>
+      <div style="margin-bottom:24px;">${renderVBars(weekBars)}</div>
+
+      <h3 class="analytics-sub">My Top Products — Last 7 Days</h3>
+      ${topProducts.length === 0
+        ? '<div class="empty-state">No sales in the last 7 days.</div>'
+        : renderHBars(topProducts, '#10b981', false)}`;
+  }
+}
+
+// ─── Messages view ────────────────────────────────────────────────────────────
+
+async function loadMessages(container) {
+  container.innerHTML = `<h1>Messages</h1><p style="color:#64748b;margin-bottom:16px">Loading…</p>`;
+  const [allMessages, users] = await Promise.all([
+    window.api.getMessages(),
+    window.api.getUsers().catch(() => []),
+  ]);
+  const me = currentUser.username;
+
+  const inbox = allMessages.filter(m => (m.to_user === me || m.to_user === 'all') && m.from_user !== me && !m.deleted);
+  const sent  = allMessages.filter(m => m.from_user === me && !m.deleted);
+
+  for (const m of inbox.filter(m => !m.is_read)) {
+    window.api.markMessageRead(m.uuid);
+    m.is_read = true;
+  }
+  refreshUnreadBadge();
+
+  const recipientOptions = [
+    '<option value="">-- Select recipient --</option>',
+    '<option value="all">📢 Everyone (broadcast)</option>',
+    ...users.filter(u => u.username !== me && !u.deleted)
+      .map(u => `<option value="${escapeHtml(u.username)}">${escapeHtml(u.username)} (${escapeHtml(u.role)})</option>`),
+  ].join('');
+
+  container.innerHTML = `
+    <h1>Messages</h1>
+    <div class="msg-layout">
+      <div class="msg-compose card">
+        <h3 class="section-title">New Message</h3>
+        <div class="form-group">
+          <label>To</label>
+          <select id="msg-to" class="select-input">${recipientOptions}</select>
+        </div>
+        <div class="form-group">
+          <label>Subject</label>
+          <input type="text" id="msg-subject" class="text-input" placeholder="Optional subject…" maxlength="200">
+        </div>
+        <div class="form-group">
+          <label>Message</label>
+          <textarea id="msg-body" class="text-input msg-textarea" placeholder="Type your message…" rows="4"></textarea>
+        </div>
+        <div id="msg-send-error" class="error-message" hidden></div>
+        <button id="msg-send-btn" class="btn-primary">Send Message</button>
+      </div>
+
+      <div class="msg-inbox">
+        <h3 class="section-title">Inbox <span class="badge-count">${inbox.length}</span></h3>
+        ${inbox.length === 0
+          ? '<p class="empty-state">No messages yet.</p>'
+          : inbox.map(m => renderMessageCard(m, false)).join('')}
+
+        <h3 class="section-title" style="margin-top:24px">Sent <span class="badge-count">${sent.length}</span></h3>
+        ${sent.length === 0
+          ? '<p class="empty-state">No sent messages.</p>'
+          : sent.map(m => renderMessageCard(m, true)).join('')}
+      </div>
+    </div>`;
+
+  document.getElementById('msg-send-btn').addEventListener('click', async () => {
+    const to_user = document.getElementById('msg-to').value;
+    const subject = document.getElementById('msg-subject').value.trim();
+    const body    = document.getElementById('msg-body').value.trim();
+    const errEl   = document.getElementById('msg-send-error');
+    errEl.hidden  = true;
+
+    if (!to_user) { errEl.textContent = 'Please select a recipient.'; errEl.hidden = false; return; }
+    if (!body)    { errEl.textContent = 'Message body cannot be empty.'; errEl.hidden = false; return; }
+
+    const btn = document.getElementById('msg-send-btn');
+    btn.disabled = true; btn.textContent = 'Sending…';
+    try {
+      await window.api.sendMessage({ to_user, subject, body });
+      await loadMessages(container);
+    } catch (err) {
+      errEl.textContent = err.message; errEl.hidden = false;
+      btn.disabled = false; btn.textContent = 'Send Message';
+    }
+  });
+}
+
+function renderMessageCard(msg, isSent) {
+  const who   = isSent ? `To: <strong>${escapeHtml(msg.to_user === 'all' ? 'Everyone' : msg.to_user)}</strong>` : `From: <strong>${escapeHtml(msg.from_user)}</strong>`;
+  const time  = new Date(msg.updated_at).toLocaleString();
+  const unread = !isSent && !msg.is_read ? ' msg-unread' : '';
+  return `
+    <div class="msg-card${unread}">
+      <div class="msg-card-header">
+        <span class="msg-who">${who}</span>
+        <span class="msg-time">${time}</span>
+      </div>
+      ${msg.subject ? `<div class="msg-subject">${escapeHtml(msg.subject)}</div>` : ''}
+      <div class="msg-body">${escapeHtml(msg.body)}</div>
+    </div>`;
+}
+
+// ─── Profile view ─────────────────────────────────────────────────────────────
+
+function avatarColor(name) {
+  const palette = ['#3b82f6','#8b5cf6','#ec4899','#14b8a6','#f59e0b','#10b981','#ef4444','#6366f1'];
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffff;
+  return palette[h % palette.length];
+}
+
+async function loadProfile(container) {
+  const me = currentUser;
+  const initials = me.username.slice(0, 2).toUpperCase();
+  const color = avatarColor(me.username);
+
+  const allMessages = await window.api.getMessages().catch(() => []);
+  const sentCount   = allMessages.filter(m => m.from_user === me.username && !m.deleted).length;
+  const unreadCount = allMessages.filter(m => (m.to_user === me.username || m.to_user === 'all') && !m.is_read && m.from_user !== me.username && !m.deleted).length;
+
+  container.innerHTML = `
+    <h1>My Profile</h1>
+    <div class="profile-layout">
+      <div class="profile-card card">
+        <div class="profile-avatar" style="background:${color}">${escapeHtml(initials)}</div>
+        <div class="profile-name">${escapeHtml(me.username)}</div>
+        <div class="profile-role">${escapeHtml(me.role)}</div>
+        <div class="profile-stats">
+          <div class="profile-stat"><span class="stat-num">${sentCount}</span><span class="stat-label">Messages sent</span></div>
+          <div class="profile-stat"><span class="stat-num">${unreadCount}</span><span class="stat-label">Unread</span></div>
+        </div>
+      </div>
+
+      <div class="profile-pw card">
+        <h3 class="section-title">Change Password</h3>
+        <div class="form-group">
+          <label>Current Password</label>
+          <input type="password" id="pw-current" class="text-input" autocomplete="current-password">
+        </div>
+        <div class="form-group">
+          <label>New Password</label>
+          <input type="password" id="pw-new" class="text-input" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label>Confirm New Password</label>
+          <input type="password" id="pw-confirm" class="text-input" autocomplete="new-password">
+        </div>
+        <div id="pw-error"   class="error-message"   hidden></div>
+        <div id="pw-success" class="success-message" hidden>Password changed successfully.</div>
+        <button id="pw-save-btn" class="btn-primary">Update Password</button>
+      </div>
+    </div>`;
+
+  document.getElementById('pw-save-btn').addEventListener('click', async () => {
+    const current = document.getElementById('pw-current').value;
+    const next    = document.getElementById('pw-new').value;
+    const confirm = document.getElementById('pw-confirm').value;
+    const errEl   = document.getElementById('pw-error');
+    const okEl    = document.getElementById('pw-success');
+    errEl.hidden = true; okEl.hidden = true;
+
+    if (!current || !next || !confirm) { errEl.textContent = 'All fields are required.'; errEl.hidden = false; return; }
+    if (next !== confirm) { errEl.textContent = 'New passwords do not match.'; errEl.hidden = false; return; }
+    if (next.length < 4) { errEl.textContent = 'Password must be at least 4 characters.'; errEl.hidden = false; return; }
+
+    const btn = document.getElementById('pw-save-btn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      await window.api.changeOwnPassword(current, next);
+      okEl.hidden = false;
+      document.getElementById('pw-current').value = '';
+      document.getElementById('pw-new').value = '';
+      document.getElementById('pw-confirm').value = '';
+    } catch (err) {
+      errEl.textContent = err.message; errEl.hidden = false;
+    } finally {
+      btn.disabled = false; btn.textContent = 'Update Password';
+    }
+  });
+}

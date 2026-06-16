@@ -22,6 +22,11 @@ db.version(2).stores({
   activity_log: '++id, uuid, at, username, action, deleted',
 });
 
+// v3: messages between users.
+db.version(3).stores({
+  messages: '++id, uuid, from_user, to_user, is_read, deleted',
+});
+
 export function uuid() {
   return crypto.randomUUID();
 }

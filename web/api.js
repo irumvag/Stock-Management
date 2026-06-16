@@ -3,7 +3,6 @@
 // works fully offline; mutations are queued in the outbox and synced to Neon by
 // sync.js. Reports are computed locally from synced data. No buying price / no
 // profit anywhere — only selling price and what went OUT.
-import bcrypt from 'bcryptjs';
 import { db, uuid, nowIso, enqueue, getMeta, setMeta } from './db.js';
 import { apiFetch, setToken, notifyMutation, syncNow } from './sync.js';
 
@@ -48,8 +47,14 @@ async function clearCompanyData() {
   await setMeta('cursor', null);
 }
 
+async function hashCredential(username, password) {
+  const buf = await crypto.subtle.digest('SHA-256',
+    new TextEncoder().encode(`${username}:${password}`));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 async function login(username, password, company) {
-  // Prefer online: authoritative + caches data for later offline use.
+  // Prefer online: authoritative + caches credentials for later offline use.
   if (navigator.onLine) {
     try {
       const res = await apiFetch('/api/auth/login', {
@@ -58,7 +63,6 @@ async function login(username, password, company) {
       });
       const data = await res.json();
       if (data.success) {
-        // If switching to a different company, clear old local data first.
         const prevCompanyId = await getMeta('company_id');
         const newCompanyId = data.user.company_id || null;
         if (prevCompanyId && prevCompanyId !== newCompanyId) {
@@ -66,7 +70,10 @@ async function login(username, password, company) {
         }
         await setToken(data.token);
         await setMeta('company_id', newCompanyId);
-        // SuperAdmin has no company data to sync.
+        // Cache credentials for offline login
+        const hash = await hashCredential(username, password);
+        await setMeta(`offline_cred_${username}`, hash);
+        await setMeta(`offline_user_${username}`, JSON.stringify(data.user));
         if (newCompanyId) {
           await syncNow();
         }
@@ -81,12 +88,16 @@ async function login(username, password, company) {
   if (!company) {
     return { success: false, error: 'System admin login requires an internet connection.' };
   }
-  const u = await db.users.where('username').equals(username).first();
-  if (!u || u.deleted || !bcrypt.compareSync(password, u.password_hash || '')) {
-    return { success: false, error: 'Invalid username or password (offline)' };
+  const storedHash = await getMeta(`offline_cred_${username}`);
+  if (!storedHash) {
+    return { success: false, error: 'No offline access for this account. Connect to the internet and sign in once first.' };
   }
-  const company_id = await getMeta('company_id');
-  return { success: true, user: { uuid: u.uuid, username: u.username, role: u.role, company_id } };
+  const hash = await hashCredential(username, password);
+  if (hash !== storedHash) {
+    return { success: false, error: 'Wrong password (you are offline).' };
+  }
+  const cachedUser = await getMeta(`offline_user_${username}`);
+  return { success: true, user: cachedUser ? JSON.parse(cachedUser) : { username } };
 }
 
 // User management is online-only (touches credentials).
@@ -414,6 +425,16 @@ async function getDraft(id) {
 async function getOpenDrafts() {
   return (await db.drafts.toArray()).filter((d) => !d.deleted && d.status === 'open').sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
 }
+
+async function getMyTables(waiterName) {
+  return (await db.drafts.toArray()).filter((d) => !d.deleted && d.status === 'open' && d.waiter_name === waiterName).sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+}
+
+async function getWaiterDailySummary(waiterName, date) {
+  const sales = (await db.sales.toArray()).filter((s) => !s.deleted && !s.refunded && s.waiter_name === waiterName && new Date(s.sale_date).toLocaleDateString('en-CA') === date);
+  const totalOut = sales.reduce((sum, s) => sum + Number(s.total_amount), 0);
+  return { tablesServed: sales.length, totalOut, sales };
+}
 async function completeDraft(draftId, paymentMethod) {
   const draft = await db.drafts.get(draftId);
   if (!draft || draft.status !== 'open') return { success: false, error: 'Draft not found or already completed' };
@@ -660,6 +681,66 @@ function printHtml(html) {
   });
 }
 
+// ---------- Messages ----------
+
+async function getMessages() {
+  if (navigator.onLine) {
+    try {
+      const res = await apiFetch('/api/messages');
+      if (res.ok) return res.json();
+    } catch {}
+  }
+  return active(await db.messages.toArray()).sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+}
+
+async function sendMessage({ to_user, subject, body }) {
+  const row = {
+    uuid: uuid(), from_user: currentActor.username, to_user, subject: subject || '',
+    body, is_read: false, updated_at: nowIso(), deleted: false,
+  };
+  await db.messages.add(row);
+  await enqueue('messages', row);
+  notifyMutation();
+  if (navigator.onLine) {
+    try {
+      const res = await apiFetch('/api/messages', { method: 'POST', body: JSON.stringify({ to_user, subject, body }) });
+      if (!res.ok) throw new Error('Failed to send message');
+    } catch (err) { throw err; }
+  }
+  return row;
+}
+
+async function markMessageRead(msgUuid) {
+  const msg = await db.messages.where('uuid').equals(msgUuid).first();
+  if (msg && !msg.is_read) {
+    msg.is_read = true; msg.updated_at = nowIso();
+    await db.messages.put(msg);
+    if (navigator.onLine) {
+      apiFetch('/api/messages', { method: 'PATCH', body: JSON.stringify({ uuid: msgUuid }) }).catch(() => {});
+    }
+  }
+}
+
+async function getUnreadCount(username) {
+  const rows = await db.messages.toArray();
+  return rows.filter(m => (m.to_user === username || m.to_user === 'all') && !m.is_read && m.from_user !== username && !m.deleted).length;
+}
+
+async function changeOwnPassword(currentPassword, newPassword) {
+  const res = await apiFetch('/api/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+  if (!res.ok) {
+    let msg = 'Failed to change password.';
+    try { const j = await res.json(); msg = j.error || msg; } catch {}
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || 'Failed to change password.');
+  return data;
+}
+
 export const api = {
   setActor, logActivity, getActivityLog,
   login,
@@ -669,11 +750,13 @@ export const api = {
   createProduct, updateProduct, deleteProduct,
   getWaiters, getActiveWaiters, createWaiter, updateWaiter, toggleWaiter, deleteWaiter,
   createDraft, addItemsToDraft, removeItemFromDraft, updateDraftItemQty, getDraft, getOpenDrafts,
+  getMyTables, getWaiterDailySummary,
   completeDraft, updateDraft, deleteDraft,
   createSale, getSales, getSale, refundSale,
   getExpenses, createExpense, deleteExpense, captureOpeningStock, getDailyStockReport,
   getSalesReport, getMonthlySummary, getWaiterDailyReport, getInventoryValueReport,
   getCashierTakings, getCashiersDaily,
+  getMessages, sendMessage, markMessageRead, getUnreadCount, changeOwnPassword,
   printReceipt: (html) => printHtml(html),
   saveReceiptPdf: (html) => printHtml(html),
   saveReportPdf: (html) => printHtml(html),

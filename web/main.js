@@ -28,6 +28,9 @@ document.addEventListener('click', (e) => {
   if (e.target.closest('#sync-badge')) syncNow();
 });
 
+// Check for new messages after every successful sync
+onStatus((s) => { if (s === 'synced' && window.checkNewMessages) window.checkNewMessages(); });
+
 // app.js sets up the renderer; window.api is already assigned by the static
 // import above, so a plain dynamic import (no top-level await) is enough.
 import('./app.js');
