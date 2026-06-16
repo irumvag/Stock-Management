@@ -34,6 +34,10 @@ export const SYNC_TABLES = {
     cols: ['uuid', 'at', 'username', 'role', 'action', 'details', 'updated_at', 'deleted'],
     pushable: true,
   },
+  messages: {
+    cols: ['uuid', 'from_user', 'to_user', 'subject', 'body', 'is_read', 'updated_at', 'deleted'],
+    pushable: true,
+  },
   users: {
     // `cols` is the full IndexedDB schema (includes password_hash for the user
     // who logged in — stored by /api/auth/login, not by sync/pull).

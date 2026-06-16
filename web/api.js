@@ -626,6 +626,66 @@ async function getStaffAnalytics(date) {
   return { date, cashiers, waiters: waiterReport.waiters, grandTotalOut: waiterReport.grandTotalOut };
 }
 
+// ---------- Messages ----------
+
+async function getMessages() {
+  if (navigator.onLine) {
+    try {
+      const res = await apiFetch('/api/messages');
+      if (res.ok) {
+        const rows = await res.json();
+        // Store in local cache for offline reading
+        for (const row of rows) {
+          const existing = await db.messages.where('uuid').equals(row.uuid).first();
+          if (existing) await db.messages.update(existing.id, row);
+          else await db.messages.add(row);
+        }
+        return rows;
+      }
+    } catch { /* offline fallback */ }
+  }
+  return db.messages.filter(m => !m.deleted).toArray();
+}
+
+async function sendMessage({ to_user, subject = '', body }) {
+  if (!navigator.onLine) throw new Error('No internet connection — messages require online access.');
+  const res = await apiFetch('/api/messages', {
+    method: 'POST',
+    body: JSON.stringify({ to_user, subject, body }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to send message');
+  await db.messages.add({ ...data, id: undefined });
+  return data;
+}
+
+async function markMessageRead(uuid) {
+  await db.messages.where('uuid').equals(uuid).modify({ is_read: true });
+  if (navigator.onLine) {
+    apiFetch(`/api/messages?uuid=${uuid}`, { method: 'PATCH' }).catch(() => {});
+  }
+}
+
+async function getUnreadCount(username) {
+  const msgs = await db.messages.filter(m =>
+    !m.deleted && !m.is_read && (m.to_user === username || m.to_user === 'all')
+  ).toArray();
+  return msgs.length;
+}
+
+// ---------- Profile (self-service password change) ----------
+
+async function changeOwnPassword(current_password, new_password) {
+  if (!navigator.onLine) throw new Error('No internet connection — password change requires online access.');
+  const res = await apiFetch('/api/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ current_password, new_password }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to change password');
+  return data;
+}
+
 // ---------- Printing (browser) ----------
 
 function printHtml(html) {
@@ -658,6 +718,8 @@ export const api = {
   getSalesReport, getMonthlySummary, getWaiterDailyReport, getInventoryValueReport,
   getCashierTakings, getCashiersDaily,
   getMyTables, getWaiterDailySummary, getStaffAnalytics,
+  getMessages, sendMessage, markMessageRead, getUnreadCount,
+  changeOwnPassword,
   // Printing: in the browser, "Save as PDF" is the print dialog's destination.
   printReceipt: (html) => printHtml(html),
   saveReceiptPdf: (html) => printHtml(html),

@@ -41,9 +41,9 @@ function stopInactivityTracking() {
 // history, and user management. The Cashier runs day-to-day operations and does
 // everything hands-on: POS, full inventory management (add products / update
 // stock), sales, and the daily reconciliation report.
-const OWNER_VIEWS   = ['dashboard', 'pos', 'products', 'sales', 'daily', 'reports', 'analytics', 'activity', 'users'];
-const CASHIER_VIEWS = ['pos', 'products', 'daily', 'sales', 'analytics'];
-const WAITER_VIEWS  = ['waiter'];
+const OWNER_VIEWS   = ['dashboard', 'pos', 'products', 'sales', 'daily', 'reports', 'analytics', 'activity', 'users', 'messages', 'profile'];
+const CASHIER_VIEWS = ['pos', 'products', 'daily', 'sales', 'analytics', 'messages', 'profile'];
+const WAITER_VIEWS  = ['waiter', 'messages', 'profile'];
 
 function isWaiter() {
   return currentUser && currentUser.role === 'Waiter';
@@ -153,8 +153,58 @@ function showApp() {
   if (defaultLink) defaultLink.classList.add('active');
   loadView(defaultView);
 
+  // Show notification bell for non-waiter users
+  const notifBar = document.getElementById('notif-bar');
+  if (notifBar) notifBar.style.display = isWaiter() ? 'none' : 'flex';
+
+  // Wire bell → Messages view
+  const bellBtn = document.getElementById('msg-bell-btn');
+  if (bellBtn) {
+    bellBtn.onclick = () => {
+      document.querySelectorAll('#sidebar a.active').forEach(a => a.classList.remove('active'));
+      const link = document.querySelector('[data-view="messages"]');
+      if (link) link.classList.add('active');
+      loadView('messages');
+    };
+  }
+
+  // Request browser notification permission once
+  if (Notification.permission === 'default') {
+    Notification.requestPermission().catch(() => {});
+  }
+
+  // Refresh unread badge now and after every sync
+  refreshUnreadBadge();
+
   // Start auto-logout timer
   startInactivityTracking();
+}
+
+async function refreshUnreadBadge() {
+  if (!currentUser) return;
+  const count = await window.api.getUnreadCount(currentUser.username);
+  const bell = document.getElementById('msg-badge');
+  const nav = document.getElementById('nav-msg-badge');
+  if (bell) { bell.textContent = count; bell.hidden = count === 0; }
+  if (nav)  { nav.textContent  = count; nav.hidden  = count === 0; }
+}
+
+// Called from main.js after a successful sync — check for new messages
+let _lastUnreadCount = 0;
+window.checkNewMessages = async function checkNewMessages() {
+  if (!currentUser) return;
+  const count = await window.api.getUnreadCount(currentUser.username);
+  if (count > _lastUnreadCount && _lastUnreadCount !== -1) {
+    const diff = count - _lastUnreadCount;
+    if (Notification.permission === 'granted') {
+      new Notification('New message', {
+        body: `You have ${diff} new message${diff > 1 ? 's' : ''}.`,
+        icon: '/icon.svg',
+      });
+    }
+  }
+  _lastUnreadCount = count;
+  refreshUnreadBadge();
 }
 
 function showLogin() {
@@ -215,6 +265,8 @@ async function loadView(view) {
     case 'activity':   await loadActivity(content);         break;
     case 'users':      await loadUsers(content);            break;
     case 'waiter':     await loadWaiterView(content);       break;
+    case 'messages':   await loadMessages(content);         break;
+    case 'profile':    await loadProfile(content);          break;
   }
 }
 
@@ -2984,3 +3036,182 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 });
+
+// ─── Messages view ────────────────────────────────────────────────────────────
+
+async function loadMessages(container) {
+  container.innerHTML = `<h1>Messages</h1><p style="color:#64748b;margin-bottom:16px">Loading…</p>`;
+  const [allMessages, users] = await Promise.all([
+    window.api.getMessages(),
+    window.api.getUsers().catch(() => []),
+  ]);
+  const me = currentUser.username;
+
+  // Split inbox (received) / sent
+  const inbox = allMessages.filter(m => (m.to_user === me || m.to_user === 'all') && m.from_user !== me && !m.deleted);
+  const sent  = allMessages.filter(m => m.from_user === me && !m.deleted);
+
+  // Mark all received as read
+  for (const m of inbox.filter(m => !m.is_read)) {
+    window.api.markMessageRead(m.uuid);
+    m.is_read = true;
+  }
+  refreshUnreadBadge();
+
+  // Build recipient options
+  const recipientOptions = [
+    '<option value="">-- Select recipient --</option>',
+    '<option value="all">📢 Everyone (broadcast)</option>',
+    ...users.filter(u => u.username !== me && !u.deleted)
+      .map(u => `<option value="${escapeHtml(u.username)}">${escapeHtml(u.username)} (${escapeHtml(u.role)})</option>`),
+  ].join('');
+
+  container.innerHTML = `
+    <h1>Messages</h1>
+    <div class="msg-layout">
+      <div class="msg-compose card">
+        <h3 class="section-title">New Message</h3>
+        <div class="form-group">
+          <label>To</label>
+          <select id="msg-to" class="select-input">${recipientOptions}</select>
+        </div>
+        <div class="form-group">
+          <label>Subject</label>
+          <input type="text" id="msg-subject" class="text-input" placeholder="Optional subject…" maxlength="200">
+        </div>
+        <div class="form-group">
+          <label>Message</label>
+          <textarea id="msg-body" class="text-input msg-textarea" placeholder="Type your message…" rows="4"></textarea>
+        </div>
+        <div id="msg-send-error" class="error-message" hidden></div>
+        <button id="msg-send-btn" class="btn-primary">Send Message</button>
+      </div>
+
+      <div class="msg-inbox">
+        <h3 class="section-title">Inbox <span class="badge-count">${inbox.length}</span></h3>
+        ${inbox.length === 0
+          ? '<p class="empty-state">No messages yet.</p>'
+          : inbox.map(m => renderMessageCard(m, false)).join('')}
+
+        <h3 class="section-title" style="margin-top:24px">Sent <span class="badge-count">${sent.length}</span></h3>
+        ${sent.length === 0
+          ? '<p class="empty-state">No sent messages.</p>'
+          : sent.map(m => renderMessageCard(m, true)).join('')}
+      </div>
+    </div>`;
+
+  document.getElementById('msg-send-btn').addEventListener('click', async () => {
+    const to_user = document.getElementById('msg-to').value;
+    const subject = document.getElementById('msg-subject').value.trim();
+    const body    = document.getElementById('msg-body').value.trim();
+    const errEl   = document.getElementById('msg-send-error');
+    errEl.hidden  = true;
+
+    if (!to_user) { errEl.textContent = 'Please select a recipient.'; errEl.hidden = false; return; }
+    if (!body)    { errEl.textContent = 'Message body cannot be empty.'; errEl.hidden = false; return; }
+
+    const btn = document.getElementById('msg-send-btn');
+    btn.disabled = true; btn.textContent = 'Sending…';
+    try {
+      await window.api.sendMessage({ to_user, subject, body });
+      await loadMessages(container);
+    } catch (err) {
+      errEl.textContent = err.message; errEl.hidden = false;
+      btn.disabled = false; btn.textContent = 'Send Message';
+    }
+  });
+}
+
+function renderMessageCard(msg, isSent) {
+  const who   = isSent ? `To: <strong>${escapeHtml(msg.to_user === 'all' ? 'Everyone' : msg.to_user)}</strong>` : `From: <strong>${escapeHtml(msg.from_user)}</strong>`;
+  const time  = new Date(msg.updated_at).toLocaleString();
+  const unread = !isSent && !msg.is_read ? ' msg-unread' : '';
+  return `
+    <div class="msg-card${unread}">
+      <div class="msg-card-header">
+        <span class="msg-who">${who}</span>
+        <span class="msg-time">${time}</span>
+      </div>
+      ${msg.subject ? `<div class="msg-subject">${escapeHtml(msg.subject)}</div>` : ''}
+      <div class="msg-body">${escapeHtml(msg.body)}</div>
+    </div>`;
+}
+
+// ─── Profile view ─────────────────────────────────────────────────────────────
+
+function avatarColor(name) {
+  const palette = ['#3b82f6','#8b5cf6','#ec4899','#14b8a6','#f59e0b','#10b981','#ef4444','#6366f1'];
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffff;
+  return palette[h % palette.length];
+}
+
+async function loadProfile(container) {
+  const me = currentUser;
+  const initials = me.username.slice(0, 2).toUpperCase();
+  const color = avatarColor(me.username);
+
+  const allMessages = await window.api.getMessages().catch(() => []);
+  const sentCount   = allMessages.filter(m => m.from_user === me.username && !m.deleted).length;
+  const unreadCount = allMessages.filter(m => (m.to_user === me.username || m.to_user === 'all') && !m.is_read && m.from_user !== me.username && !m.deleted).length;
+
+  container.innerHTML = `
+    <h1>My Profile</h1>
+    <div class="profile-layout">
+      <div class="profile-card card">
+        <div class="profile-avatar" style="background:${color}">${escapeHtml(initials)}</div>
+        <div class="profile-name">${escapeHtml(me.username)}</div>
+        <div class="profile-role">${escapeHtml(me.role)}</div>
+        <div class="profile-stats">
+          <div class="profile-stat"><span class="stat-num">${sentCount}</span><span class="stat-label">Messages sent</span></div>
+          <div class="profile-stat"><span class="stat-num">${unreadCount}</span><span class="stat-label">Unread</span></div>
+        </div>
+      </div>
+
+      <div class="profile-pw card">
+        <h3 class="section-title">Change Password</h3>
+        <div class="form-group">
+          <label>Current Password</label>
+          <input type="password" id="pw-current" class="text-input" autocomplete="current-password">
+        </div>
+        <div class="form-group">
+          <label>New Password</label>
+          <input type="password" id="pw-new" class="text-input" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label>Confirm New Password</label>
+          <input type="password" id="pw-confirm" class="text-input" autocomplete="new-password">
+        </div>
+        <div id="pw-error"   class="error-message"   hidden></div>
+        <div id="pw-success" class="success-message" hidden>Password changed successfully.</div>
+        <button id="pw-save-btn" class="btn-primary">Update Password</button>
+      </div>
+    </div>`;
+
+  document.getElementById('pw-save-btn').addEventListener('click', async () => {
+    const current = document.getElementById('pw-current').value;
+    const next    = document.getElementById('pw-new').value;
+    const confirm = document.getElementById('pw-confirm').value;
+    const errEl   = document.getElementById('pw-error');
+    const okEl    = document.getElementById('pw-success');
+    errEl.hidden = true; okEl.hidden = true;
+
+    if (!current || !next || !confirm) { errEl.textContent = 'All fields are required.'; errEl.hidden = false; return; }
+    if (next !== confirm) { errEl.textContent = 'New passwords do not match.'; errEl.hidden = false; return; }
+    if (next.length < 4) { errEl.textContent = 'Password must be at least 4 characters.'; errEl.hidden = false; return; }
+
+    const btn = document.getElementById('pw-save-btn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      await window.api.changeOwnPassword(current, next);
+      okEl.hidden = false;
+      document.getElementById('pw-current').value = '';
+      document.getElementById('pw-new').value = '';
+      document.getElementById('pw-confirm').value = '';
+    } catch (err) {
+      errEl.textContent = err.message; errEl.hidden = false;
+    } finally {
+      btn.disabled = false; btn.textContent = 'Update Password';
+    }
+  });
+}

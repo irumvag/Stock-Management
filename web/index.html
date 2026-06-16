@@ -41,6 +41,12 @@
       <h2>Stock Manager</h2>
       <button id="sync-badge" class="sync-badge sync-idle" type="button"><span class="sync-dot"></span>Ready</button>
       <div id="user-info"></div>
+      <div id="notif-bar" style="display:none">
+        <button id="msg-bell-btn" class="msg-bell" type="button" title="Messages">
+          <span class="bell-icon">&#128276;</span>
+          <span id="msg-badge" class="msg-badge" hidden>0</span>
+        </button>
+      </div>
       <ul id="nav-links">
         <li><a href="#" data-view="dashboard" class="active">Dashboard <span class="shortcut-hint">F1</span></a></li>
         <li><a href="#" data-view="pos">Point of Sale <span class="shortcut-hint">F2</span></a></li>
@@ -52,6 +58,8 @@
         <li><a href="#" data-view="activity">Activity <span class="shortcut-hint">F8</span></a></li>
         <li><a href="#" data-view="users">Users <span class="shortcut-hint">F9</span></a></li>
         <li><a href="#" data-view="waiter">My Tables</a></li>
+        <li><a href="#" data-view="messages">Messages <span id="nav-msg-badge" class="nav-badge" hidden>0</span></a></li>
+        <li><a href="#" data-view="profile">My Profile</a></li>
       </ul>
       <div class="shortcuts-bar">
         <span class="shortcut-badge"><kbd>F1</kbd>-<kbd>F9</kbd> Navigate</span>

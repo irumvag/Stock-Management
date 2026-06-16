@@ -23,7 +23,14 @@ function renderBadge(status, pending) {
 }
 
 initSync();
-onStatus(renderBadge);
+onStatus((status, pending) => {
+  renderBadge(status, pending);
+  // After a successful sync, check for new messages and update the badge
+  if (status === 'synced') {
+    // checkNewMessages is defined in app.js after it loads
+    if (typeof checkNewMessages === 'function') checkNewMessages();
+  }
+});
 document.addEventListener('click', (e) => {
   if (e.target.closest('#sync-badge')) syncNow();
 });
